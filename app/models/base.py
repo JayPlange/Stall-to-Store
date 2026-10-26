@@ -9,6 +9,7 @@ retried unchanged. We do not retry anything automatically.
 """
 import json
 import logging
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -25,7 +26,10 @@ log = logging.getLogger("sts.models")
 
 PROVIDER = "meta"
 KEEP_HEADERS = ("content-type", "retry-after", "x-request-id", "request-id")
-SENSITIVE_KEYS = ("authorization", "api_key", "apikey", "token", "secret", "password")
+# Credential-shaped key names. Deliberately not "contains token": usage fields like prompt_tokens must survive.
+SENSITIVE_KEY_RE = re.compile(r"(?i)^(authorization|proxy-authorization|cookie|set-cookie|password|secret|token)$"
+                              r"|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|client[_-]?secret"
+                              r"|(^|[_-])(secret|password)($|[_-])|_token$")
 
 
 class LiveCallsDisabled(RuntimeError):
@@ -63,7 +67,7 @@ class CallResult:
 def sanitise(value: Any, secret: str | None = None) -> Any:
     """Redact secrets and inline media (data URLs) from anything we persist."""
     if isinstance(value, dict):
-        return {k: ("<redacted>" if any(s in k.lower() for s in SENSITIVE_KEYS) else sanitise(v, secret))
+        return {k: ("<redacted>" if SENSITIVE_KEY_RE.search(k) else sanitise(v, secret))
                 for k, v in value.items()}
     if isinstance(value, list):
         return [sanitise(v, secret) for v in value]

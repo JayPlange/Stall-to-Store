@@ -1,7 +1,7 @@
 # Build status
 
-Last updated: 2026-10-26 (Day 0). **No live Meta call has been made yet.** Every adapter below follows Meta's published
-docs, but none has been confirmed against a real response.
+Last updated: 2026-10-26 (Day 0). **Live access verified for listing and Muse Spark text only.** SAM 3.1, transcription and
+vision adapters follow Meta's published docs but are not yet confirmed against real responses.
 
 ## Gate G1a, one model at a time
 
@@ -10,8 +10,8 @@ not show that SAM video segmentation or transcription works.
 
 | Check | Command (one paid call each) | Proves | Status |
 |---|---|---|---|
-| Key and billing | `smoke_meta.py models --yes` | Auth works; account not payment-restricted | Not run: no `MODEL_API_KEY` |
-| Muse Spark text | `smoke_meta.py chat --yes` | Chat Completions shape and `usage` fields | Not run |
+| Key and listing | `smoke_meta.py models --yes` | Auth works | **PASS** 2026-10-26 18:24 UTC: HTTP 200, 1,780 ms, no usage units. Lists `sam-3.1`, `muse-voice-transcribe-1.0`, `muse-spark-1.3` (+1.2, 1.1, contributor variants), `muse-image-1.0`, `muse-wonder-1.0`. Shape `{object, data[{id, object, created, owned_by}]}` |
+| Muse Spark text (billed) | `smoke_meta.py chat --yes` | Billed calls work; Chat Completions shape | **PASS** 18:24 UTC: HTTP 200, 3,219 ms, reply `ok`, finish `stop`. Usage: 15 prompt / 154 completion tokens, **144 of them reasoning**. Est. $0.000673. Shape matches docs: `{id, object, created, model, choices, usage{prompt_tokens, completion_tokens, total_tokens, completion_tokens_details{reasoning_tokens}, prompt_tokens_details{cached_tokens}}}` |
 | Muse Voice Transcribe | `smoke_meta.py transcribe --yes --audio runs/_smoke/speech_sample.wav` | Turn timings (`startMs`/`endMs`) come back | Not run |
 | **SAM 3.1 video** | `smoke_meta.py sam --yes --video <clip.mp4> --prompt "bottle"` | Tracks, boxes and masks on real footage. **The hardest risk.** | Not run; needs a real clip |
 | Muse Spark vision | first `identify` on real keyframes | Product names from crops | Not run |
@@ -22,8 +22,8 @@ line to `runs/_smoke/smoke_log.jsonl`, and a row in `model_calls`.
 
 ## Blockers
 
-1. **No `MODEL_API_KEY`** on this machine (process, user and machine env checked by name only). The account's
-   payment-authorisation restriction is unresolved.
+1. **No real product clip yet** for the SAM 3.1 check. SAM is the hardest open risk.
+   Billed Muse Spark calls succeed, so the payment restriction does not block this key. That is not yet shown for SAM or transcription.
 2. **No footage or labels yet.** G1b, G2 and G3 cannot start without them.
 3. **Open question for the organisers:** SPEC says "The repository starts on 27 October", but the first commit
    (`f89643b`) is dated 26 October, kickoff day, when "Hacking starts now" was announced. Ask in `#questions` whether
@@ -86,6 +86,17 @@ line to `runs/_smoke/smoke_log.jsonl`, and a row in `model_calls`.
 
 - Python 3.12.10 venv at `~/.venvs/stall-to-store`. It sits outside the project because this folder's path is longer
   than Windows' 260-character limit inside pip. ffmpeg/ffprobe 9.0 are on `PATH`.
+
+## Engineering notes
+
+- 2026-10-26: the sanitiser redacted every field containing "token", blanking `usage` counts in
+  `runs/_smoke/raw/smoke-chat.json`. It now matches credential names only (test added). The true counts for that call
+  are in `model_calls.units_json` and `runs/_smoke/smoke_log.jsonl`.
+
+## Cost note from the first live call
+
+- Muse Spark spent 144 reasoning tokens to answer "ok". Output tokens cost $4.25 per 1M, so reasoning will dominate
+  the cost of price parsing and identification. Measure it on the first real run before any batch.
 
 ## Known gaps
 

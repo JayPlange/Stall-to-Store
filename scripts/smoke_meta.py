@@ -27,7 +27,7 @@ from app.artefacts import safe_join  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.db import connect, init_db, iso, utcnow  # noqa: E402
 from app.models.base import AdapterNotVerified, CallContext, LiveCallsDisabled, MetaClient, ProviderError  # noqa: E402
-from app.models.pricing import sam_video_cost, transcribe_cost  # noqa: E402
+from app.models.pricing import sam_video_cost, spark_cost, transcribe_cost  # noqa: E402
 from app.models.segment import build_request as sam_request, extract_output_text, parse_tracks  # noqa: E402
 from app.models.transcribe import build_request, normalise as transcribe_normalise  # noqa: E402
 from app.pipeline.ingest import extract_frames, normalise_video  # noqa: E402
@@ -71,7 +71,8 @@ def main() -> int:
             r = client.request(ctx, model, "GET", "/models")
         elif args.what == "chat":
             r = client.request(ctx, model, "POST", "/chat/completions", json_body={
-                "model": model, "messages": [{"role": "user", "content": "Reply with the single word: ok"}]})
+                "model": model, "messages": [{"role": "user", "content": "Reply with the single word: ok"}]},
+                estimate_cost=lambda b: spark_cost(model, b.get("usage")))
         elif args.what == "transcribe":
             if args.audio:
                 wav, label = Path(args.audio), "user-supplied speech sample"
@@ -97,7 +98,9 @@ def main() -> int:
             tracks, diags = parse_tracks(extract_output_text(r.body), s.frame_fps, args.prompt, 0, None)
             entry["sam"] = {"frames_sent": frames, "tracks": len(tracks), "diagnostics": diags[:10],
                             "hits_per_track": {t.track_id: len(t.frames) for t in tracks}}
+        cost = conn.execute("SELECT cost_usd FROM model_calls ORDER BY id DESC LIMIT 1").fetchone()[0]
         entry.update(ok=True, status=r.status, latency_ms=r.latency_ms, units=r.units, raw=r.raw_path,
+                     estimated_cost_usd=cost,
                      shape=_shape(r.body))
     except AdapterNotVerified as exc:
         entry.update(ok=False, error_type="schema_mismatch", message=str(exc))

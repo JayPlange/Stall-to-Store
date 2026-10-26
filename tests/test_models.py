@@ -128,3 +128,12 @@ def test_sanitise():
                     "msg": f"key {FAKE_KEY}"}, FAKE_KEY)
     assert out["Authorization"] == "<redacted>" and "redacted" in out["nested"][0]["url"]
     assert FAKE_KEY not in out["msg"]
+
+
+def test_sanitise_keeps_usage_but_redacts_credentials():
+    usage = {"prompt_tokens": 15, "completion_tokens": 154, "total_tokens": 169,
+             "completion_tokens_details": {"reasoning_tokens": 144}, "prompt_tokens_details": {"cached_tokens": 0}}
+    assert sanitise({"usage": usage})["usage"] == usage
+    creds = {"Authorization": "x", "api_key": "x", "x-api-key": "x", "access_token": "x", "refresh_token": "x",
+             "client_secret": "x", "password": "x", "token": "x", "session_token": "x"}
+    assert all(v == "<redacted>" for v in sanitise(creds).values())

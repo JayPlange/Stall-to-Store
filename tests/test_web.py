@@ -1,0 +1,171 @@
+import io
+import json
+import re
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.catalogue import list_products, run_by_token
+from app.db import connect
+from app.main import create_app
+from tests.conftest import needs_ffmpeg
+
+
+def _token(resp) -> str:
+    return re.search(r"/r/([A-Za-z0-9_\-]+)/", resp.text).group(1)
+
+
+def test_health_reports_names_not_values(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["model_api_key_present"] is False and body["live_model_calls_enabled"] is False
+    assert r.headers["Referrer-Policy"] == "no-referrer"
+
+
+def test_upload_rejects_bad_extension(client, settings):
+    r = client.post("/runs", files={"video": ("../../evil.exe", b"MZ...", "application/octet-stream")})
+    assert r.status_code == 400 and "unsupported file type" in r.text
+    assert not any(settings.runs_dir.iterdir())
+
+
+def test_upload_rejects_non_video(client, settings):
+    r = client.post("/runs", files={"video": ("clip.mp4", b"not a video at all", "video/mp4")})
+    assert r.status_code == 400 and "not a readable video" in r.text
+    assert not any(settings.runs_dir.iterdir())
+
+
+def test_upload_rejects_empty_and_oversize(client):
+    assert client.post("/runs", files={"video": ("a.mp4", b"", "video/mp4")}).status_code == 400
+    big = io.BytesIO(b"\0" * (5 * 1024 * 1024 + 1))
+    r = client.post("/runs", files={"video": ("a.mp4", big, "video/mp4")})
+    assert r.status_code == 400 and "larger than" in r.text
+
+
+@needs_ffmpeg
+def test_upload_rejects_too_short_and_silent(settings, sample_video, silent_video):
+    c = TestClient(create_app(settings.model_copy(update={"min_duration_s": 10})))
+    r = c.post("/runs", files={"video": ("a.mp4", sample_video.read_bytes(), "video/mp4")})
+    assert r.status_code == 400 and "shorter" in r.text
+    c = TestClient(create_app(settings))
+    r = c.post("/runs", files={"video": ("a.mp4", silent_video.read_bytes(), "video/mp4")})
+    assert r.status_code == 400 and "no audio" in r.text
+
+
+@needs_ffmpeg
+def test_valid_upload_ingests(client, settings, sample_video):
+    r = client.post("/runs", files={"video": ("My Stall (1).MP4", sample_video.read_bytes(), "video/mp4")})
+    assert r.status_code == 200 and "not run for this video" in r.text
+    conn = connect(settings.db_path)
+    run = run_by_token(conn, _token(r)) if "/r/" in r.text else None
+    run = run or dict(conn.execute("SELECT * FROM runs").fetchone())
+    assert run["status"] == "ingested" and run["source"] == "real"
+    rdir = settings.runs_dir / run["id"]
+    assert (rdir / "input" / "source.mp4").is_file() and (rdir / "audio.wav").is_file()
+    frames = json.loads((rdir / "frames.json").read_text())
+    assert frames["fps"] == 2.0 and len(frames["frames"]) in (12, 13)
+    meta = json.loads((rdir / "metadata.json").read_text())
+    assert meta["has_audio"] and 5.5 < meta["duration_s"] < 6.5
+
+
+def test_fixture_route_disabled_by_default(client):
+    assert client.post("/dev/fixture").status_code == 404
+
+
+@pytest.fixture
+def fixture_client(settings):
+    return TestClient(create_app(settings.model_copy(update={"dev_fixtures": True})))
+
+
+def test_fixture_review_publish_order_flow(fixture_client, settings):
+    c = fixture_client
+    r = c.post("/dev/fixture")
+    assert r.status_code == 200 and "DEVELOPMENT FIXTURE" in r.text
+    token = _token(r)
+    conn = connect(settings.db_path)
+    run = run_by_token(conn, token)
+    products = list_products(conn, run["id"])
+    by_track = {p["track_id"]: p for p in products}
+    assert by_track["t1"]["match_status"] == "auto" and by_track["t5"]["match_status"] == "needs_seller"
+
+    # Publishing with nothing approved fails.
+    r = c.post(f"/r/{token}/publish", data={"seller_name": "Ama", "seller_whatsapp": "+233240000000", "slug": "ama"})
+    assert r.status_code == 400 and "approve at least one" in r.text
+
+    # HTMX approve returns a partial card.
+    milk = by_track["t1"]["id"]
+    r = c.post(f"/r/{token}/products/{milk}/status", data={"status": "approved"}, headers={"HX-Request": "true"})
+    assert r.status_code == 200 and f'id="product-{milk}"' in r.text and "<html" not in r.text
+
+    # Approving an unpriced product fails with a message, not a crash.
+    lotion = by_track["t5"]["id"]
+    r = c.post(f"/r/{token}/products/{lotion}/status", data={"status": "approved"}, headers={"HX-Request": "true"})
+    assert "needs a price" in r.text
+    # Seller picks a suggested price, then approves.
+    mention = conn.execute("SELECT mention_id FROM candidates WHERE product_id = ? ORDER BY rank LIMIT 1",
+                           (lotion,)).fetchone()[0]
+    c.post(f"/r/{token}/products/{lotion}/suggestion", data={"mention_id": mention})
+    c.post(f"/r/{token}/products/{lotion}/status", data={"status": "approved"})
+
+    r = c.post(f"/r/{token}/publish", data={"seller_name": "Ama", "seller_whatsapp": "0240000000", "slug": "ama-shop"})
+    assert r.status_code == 200 and "/s/ama-shop" in r.text
+
+    shop = c.get("/s/ama-shop")
+    assert shop.status_code == 200 and "DEVELOPMENT FIXTURE" in shop.text
+    assert "Evaporated Milk" in shop.text and "Body Lotion" in shop.text and "Sardines" not in shop.text
+    assert c.get(f"/s/ama-shop/img/{milk}").status_code == 200
+    assert c.get(f"/s/ama-shop/img/{by_track['t7']['id']}").status_code == 404  # unapproved image not public
+
+    r = c.post("/s/ama-shop/order", data={f"qty_{milk}": "2", f"qty_{lotion}": "1"})
+    assert r.status_code == 200 and "has not been sent yet" in r.text
+    link = re.search(r'href="(https://wa\.me/[^"]+)"', r.text).group(1).replace("&amp;", "&")
+    text = parse_qs(urlparse(link).query)["text"][0]
+    assert "Total: GH₵59.00" in text  # 2 x 12.00 + 1 x 35.00
+    ref = re.search(r"S2S-[A-Z0-9]{6}", text).group(0)
+
+    # Unapproved product and forged price fields are rejected / ignored.
+    r = c.post("/s/ama-shop/order", data={f"qty_{by_track['t7']['id']}": "1"})
+    assert r.status_code == 400
+    r = c.post("/s/ama-shop/order", data={f"qty_{milk}": "1", "price": "1", "total": "1"})
+    assert "GH₵12.00" in r.text
+
+    # Seller confirms by reference, twice (idempotent).
+    r = c.post(f"/r/{token}/orders/{ref}/confirm")
+    assert r.status_code == 200 and f"{ref} confirmed" in r.text
+    r = c.post(f"/r/{token}/orders/{ref}/confirm")
+    assert "already confirmed" in r.text
+    assert c.post(f"/r/{token}/orders/S2S-ZZZZZZ/confirm").status_code == 400
+
+
+def test_save_and_approve_in_one_step(fixture_client, settings):
+    c = fixture_client
+    token = _token(c.post("/dev/fixture"))
+    conn = connect(settings.db_path)
+    p = next(p for p in list_products(conn, run_by_token(conn, token)["id"]) if p["track_id"] == "t6")
+    form = {"brand": "FIXTURE", "name": "Toothpaste", "size": "120 g", "price": "14.5", "approve": "1"}
+    r = c.post(f"/r/{token}/products/{p['id']}", data=form, headers={"HX-Request": "true"})
+    assert "approved" in r.text and "price set by you" in r.text
+    row = conn.execute("SELECT status, price_pesewas, price_source FROM products WHERE id = ?", (p["id"],)).fetchone()
+    assert tuple(row) == ("approved", 1450, "seller")
+    # Bad price: nothing approved, error shown in the card.
+    q = next(x for x in list_products(conn, run_by_token(conn, token)["id"]) if x["track_id"] == "t7")
+    r = c.post(f"/r/{token}/products/{q['id']}", data={**form, "price": "abc"}, headers={"HX-Request": "true"})
+    assert "at most 2 decimals" in r.text
+    assert conn.execute("SELECT status FROM products WHERE id = ?", (q["id"],)).fetchone()[0] == "draft"
+
+
+def test_wrong_token_and_unknown_shop_404(client):
+    assert client.get("/r/not-a-real-token").status_code == 404
+    assert client.get("/s/nope").status_code == 404
+    assert client.post("/r/x/products/1/status", data={"status": "approved"}).status_code == 404
+
+
+def test_cannot_touch_other_runs_product(fixture_client, settings):
+    c = fixture_client
+    t1 = _token(c.post("/dev/fixture"))
+    t2 = _token(c.post("/dev/fixture"))
+    conn = connect(settings.db_path)
+    other = list_products(conn, run_by_token(conn, t2)["id"])[0]["id"]
+    assert c.post(f"/r/{t1}/products/{other}/status", data={"status": "approved"}).status_code == 404
+    assert c.get(f"/r/{t1}/img/{other}").status_code == 404

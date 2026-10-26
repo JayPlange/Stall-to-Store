@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Review your shop · Stall to Store{% endblock %}
+{% block content %}
+<h1>Review your products</h1>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+<p class="hint">Keep this page's link private: it lets you edit your shop.</p>
+
+<section class="card run-status">
+  <p><strong>Run status:</strong> {{ run.status }}{% if run.stage %} (last stage: {{ run.stage }}){% endif %}</p>
+  {% if run.error %}<p class="error">{{ run.error }}</p>{% endif %}
+  {% if metadata %}<p class="hint">Video: {{ '%.1f'|format(metadata.duration_s) }} s, {{ metadata.width }}×{{ metadata.height }}, {{ metadata.frame_count }} frames at {{ metadata.frame_fps|int }} fps.</p>{% endif %}
+  {% if not products and run.source == 'real' %}
+  <p>No draft products yet. Transcription, tracking and identification have not run for this video: they need verified Meta API access.</p>
+  {% endif %}
+</section>
+
+{% if products %}
+<p class="summary">{{ counts.approved }} approved · {{ counts.draft }} draft · {{ counts.hidden }} hidden. Only approved products appear in your shop.</p>
+{% for c in cards %}{% with p=c.p, suggestions=c.suggestions, error=c.error %}{% include "_product_card.html" %}{% endwith %}{% endfor %}
+
+<section class="card">
+  <h2>{% if shop and shop.published_at %}Update your shop{% else %}Publish your shop{% endif %}</h2>
+  <form method="post" action="/r/{{ run.review_token }}/publish">
+    <label>Shop name <input name="seller_name" value="{{ shop.seller_name if shop else '' }}" required maxlength="120"></label>
+    <label>WhatsApp number <input name="seller_whatsapp" value="{{ '+' ~ shop.seller_whatsapp if shop else '' }}" inputmode="tel" placeholder="+233 20 000 0001" required></label>
+    <label>Shop link /s/<input name="slug" value="{{ shop.slug if shop else '' }}" pattern="[a-z0-9-]{3,40}" required></label>
+    <button type="submit">Publish {{ counts.approved }} approved product{{ '' if counts.approved == 1 else 's' }}</button>
+  </form>
+  {% if shop and shop.published_at %}<p>Live at <a href="/s/{{ shop.slug }}">/s/{{ shop.slug }}</a></p>{% endif %}
+</section>
+{% endif %}
+
+{% if orders %}
+<section class="card">
+  <h2>Order proposals</h2>
+  <p class="hint">A customer's WhatsApp message carries the reference code. Confirm only after you have received it.</p>
+  {% for o in orders %}
+  <div class="order-row">
+    <strong>{{ o.reference }}</strong> · {{ o.total_pesewas|cedis }} · {{ o.status }}
+    <ul>{% for l in o.lines %}<li>{{ l.qty }} × {{ l.label }} @ {{ l.unit_price_pesewas|cedis }}</li>{% endfor %}</ul>
+    {% if o.status == 'proposed' %}
+    <form method="post" action="/r/{{ run.review_token }}/orders/{{ o.reference }}/confirm" class="inline"><button type="submit">Confirm</button></form>
+    <form method="post" action="/r/{{ run.review_token }}/orders/{{ o.reference }}/cancel" class="inline"><button type="submit" class="secondary">Cancel</button></form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

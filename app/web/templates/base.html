@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Stall to Store{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+</head>
+<body>
+  {% if (run is defined and run and run.source == 'fixture') or (shop is defined and shop and shop.source == 'fixture') %}
+  <div class="fixture-banner" role="alert">DEVELOPMENT FIXTURE: hand-written test data, not model output and not a real shop.</div>
+  {% endif %}
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Your order · {{ shop.seller_name }}{% endblock %}
+{% block content %}
+<h1>Your order {{ order.reference }}</h1>
+<section class="card">
+  <ul class="lines">
+    {% for l in order.lines %}<li>{{ l.qty }} × {{ l.label }} @ {{ l.unit_price_pesewas|cedis }} = {{ l.line_total_pesewas|cedis }}</li>{% endfor %}
+  </ul>
+  <p class="price">Total {{ order.total_pesewas|cedis }}</p>
+</section>
+<p class="notice"><strong>Your order has not been sent yet.</strong> Tap the button to open WhatsApp with the order filled in, then press <strong>Send</strong>. {{ shop.seller_name }} will confirm with you on WhatsApp.</p>
+<a class="button" href="{{ wa_link }}" rel="noopener noreferrer">Open WhatsApp to send</a>
+<p class="hint">Prices are held until the seller confirms. If the seller changes a price first, they will ask you to order again.</p>
+<p><a href="/s/{{ shop.slug }}">Back to the shop</a></p>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ shop.seller_name }} · Stall to Store{% endblock %}
+{% block content %}
+<h1>{{ shop.seller_name }}</h1>
+<p class="hint">Choose quantities, then send your order to the seller on WhatsApp.</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/s/{{ shop.slug }}/order">
+  <div class="grid">
+  {% for p in products %}
+    <div class="card shop-item">
+      <img src="/s/{{ shop.slug }}/img/{{ p.id }}" alt="{{ p.name }}" loading="lazy">
+      <h2>{{ p.brand or '' }} {{ p.name }}</h2>
+      {% if p.size %}<p class="hint">{{ p.size }}</p>{% endif %}
+      <p class="price">{{ p.price_pesewas|cedis }}</p>
+      <label>Quantity <input type="number" name="qty_{{ p.id }}" min="0" max="50" value="0" inputmode="numeric"></label>
+    </div>
+  {% else %}
+    <p>No products are available right now.</p>
+  {% endfor %}
+  </div>
+  {% if products %}<button type="submit" class="sticky">Prepare WhatsApp order</button>{% endif %}
+</form>
+{% endblock %}

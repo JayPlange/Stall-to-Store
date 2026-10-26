@@ -84,8 +84,8 @@ line to `runs/_smoke/smoke_log.jsonl`, and a row in `model_calls`.
 
 ## Verified local facts
 
-- Python 3.12.10 venv at `~/.venvs/stall-to-store`. It sits outside the project because this folder's path is longer
-  than Windows' 260-character limit inside pip. ffmpeg/ffprobe 9.0 are on `PATH`.
+- Python 3.12.10 venv at `~/.venvs/stall-to-store`, outside the project. It was put there because the original
+  session folder's path exceeded Windows' 260-character limit inside pip. ffmpeg/ffprobe 9.0 are on `PATH`.
 
 ## Engineering notes
 

@@ -29,7 +29,8 @@ Tests (no network, no API key, no paid calls):
 
 ## How it works
 
-1. **Ingest** (ffmpeg, local): `audio.wav` (16 kHz mono), frames at 2 fps, `metadata.json`.
+1. **Ingest** (ffmpeg, local): `audio.wav` (24 kHz mono), `normalised.mp4` (2 fps, the file SAM receives),
+   frames extracted from that same file, `metadata.json`.
 2. **Transcribe** with Muse Voice Transcribe, 3. **Track** products with SAM 3.1, 4. **Keyframes** (area × sharpness),
 5a. **Price mentions** from the transcript with Muse Spark (regex fallback), 5b. **Identify** products from crops with Muse Spark.
 6. **Associate** prices with products: a deterministic time-window scorer proposes candidates; auto-matches
@@ -52,16 +53,32 @@ python -m app.pipeline.cli transcribe <run_id> --live
 They also need `STS_ALLOW_LIVE_MODEL_CALLS=true` and `MODEL_API_KEY`. Every call is logged to `model_calls`,
 and its sanitised raw response is saved under `runs/{run_id}/raw/`. Calls are never retried automatically.
 
-## Meta model usage
+## Project status
 
-| Stage | Model | How it is called (from Meta's docs) | Status |
-|---|---|---|---|
-| Track | SAM 3.1 (`sam-3.1`) | Responses API, one noun phrase per request, normalised 2 fps MP4; parsed with Meta's `meta-sam-parser` | Built; **not yet run live** |
-| Transcribe | Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | `ENDPOINTING` mode for turn-level timings (no word timings exist) | Built; not yet run live |
-| Prices, identify | Muse Spark (`muse-spark-1.3`) | Chat Completions with JSON schema; images as data URLs | Built; not yet run live |
-| Ranking, image clean-up, agent | Muse Spark / Muse Image / Muse Glimmer | | P2, not started |
+**Tested locally (pytest, no network, no API key):** upload validation, ffmpeg ingest, price association,
+seller review and publishing, shop page, click-to-chat order proposals and confirmation safeguards, evaluation
+maths, and the adapters' request building and response parsing against mocked responses.
 
-No result in this repository is presented as model output unless it came from a logged live call.
+**Verified with live Meta calls:**
+
+| Call | Result |
+|---|---|
+| List models | HTTP 200; `sam-3.1`, `muse-voice-transcribe-1.0`, `muse-spark-1.3` available to our key |
+| Muse Spark (`muse-spark-1.3`) text chat | HTTP 200, billed; response and `usage` shape match Meta's docs |
+
+**Built from Meta's docs but NOT yet tested live:**
+
+| Stage | Model | How it is called |
+|---|---|---|
+| Track | SAM 3.1 (`sam-3.1`) | Responses API, one noun phrase per request, normalised 2 fps MP4; parsed with Meta's `meta-sam-parser` |
+| Transcribe | Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | `ENDPOINTING` mode for turn-level timings (no word timings exist) |
+| Prices, identify | Muse Spark (`muse-spark-1.3`) | Chat Completions with JSON schema; images as data URLs |
+
+**Planned, not started:** candidate ranking with Muse Spark, Muse Image clean-up, and a WhatsApp agent
+(Muse Glimmer or Muse Spark).
+
+The development fixture is hand-written test data and is never model output. No result in this repository
+is presented as model output unless it came from a logged live call.
 
 ## Evaluation
 

@@ -17,6 +17,10 @@ python -m venv .venv
 .venv/Scripts/python -m uvicorn app.main:create_app --factory --no-access-log --port 8000
 ```
 
+Create your local settings file by copying `.env.example` to `.env` (Windows: `copy .env.example .env`;
+macOS/Linux: `cp .env.example .env`). `.env` is gitignored. `MODEL_API_KEY` is needed only for live model calls;
+the app, the fixture and the tests run without it.
+
 Open http://127.0.0.1:8000. To try the review screen and shop without model access, set
 `STS_DEV_FIXTURES=true`. The "Load development fixture" button then creates a hand-written fixture run,
 shown with a red **DEVELOPMENT FIXTURE** banner on every page.
@@ -58,6 +62,10 @@ and its sanitised raw response is saved under `runs/{run_id}/raw/`. Calls are ne
 **Tested locally (pytest, no network, no API key):** upload validation, ffmpeg ingest, price association,
 seller review and publishing, shop page, click-to-chat order proposals and confirmation safeguards, evaluation
 maths, and the adapters' request building and response parsing against mocked responses.
+
+**Not yet verified end to end:** Stage A click-to-chat ordering is tested locally only. The `wa.me` link has NOT
+yet been opened on a real phone, and an order message has NOT yet been confirmed as received by a seller. This is
+an open G3 blocker (see [BUILD_STATUS.md](BUILD_STATUS.md)).
 
 **Verified with live Meta calls:**
 

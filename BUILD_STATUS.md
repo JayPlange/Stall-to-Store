@@ -13,7 +13,7 @@ not show that SAM video segmentation or transcription works.
 | Key and listing | `smoke_meta.py models --yes` | Auth works | **PASS** 2026-10-26 18:24 UTC: HTTP 200, 1,780 ms, no usage units. Lists `sam-3.1`, `muse-voice-transcribe-1.0`, `muse-spark-1.3` (+1.2, 1.1, contributor variants), `muse-image-1.0`, `muse-wonder-1.0`. Shape `{object, data[{id, object, created, owned_by}]}` |
 | Muse Spark text (billed) | `smoke_meta.py chat --yes` | Billed calls work; Chat Completions shape | **PASS** 18:24 UTC: HTTP 200, 3,219 ms, reply `ok`, finish `stop`. Usage: 15 prompt / 154 completion tokens, **144 of them reasoning**. Est. $0.000673. Shape matches docs: `{id, object, created, model, choices, usage{prompt_tokens, completion_tokens, total_tokens, completion_tokens_details{reasoning_tokens}, prompt_tokens_details{cached_tokens}}}` |
 | Muse Voice Transcribe | `smoke_meta.py transcribe --yes --audio runs/_smoke/speech_sample.wav` | Turn timings (`startMs`/`endMs`) come back | Not run |
-| **SAM 3.1 video** | `smoke_meta.py sam --yes --video <clip.mp4> --prompt "bottle"` | Tracks, boxes and masks on real footage. **The hardest risk.** | Not run; needs a real clip |
+| **SAM 3.1 video** | `smoke_meta.py sam --yes --video <clip.mp4> --prompt "product package"` | Tracks, boxes and masks on real footage. **The hardest risk.** | Not run; needs a real clip |
 | Muse Spark vision | first `identify` on real keyframes | Product names from crops | Not run |
 
 `runs/_smoke/speech_sample.wav` is a local Windows TTS clip saying three prices. It is synthetic speech for checking
@@ -25,9 +25,13 @@ line to `runs/_smoke/smoke_log.jsonl`, and a row in `model_calls`.
 1. **No real product clip yet** for the SAM 3.1 check. SAM is the hardest open risk.
    Billed Muse Spark calls succeed, so the payment restriction does not block this key. That is not yet shown for SAM or transcription.
 2. **No footage or labels yet.** G1b, G2 and G3 cannot start without them.
-3. **Open question for the organisers:** SPEC says "The repository starts on 27 October", but the first commit
-   (`f89643b`) is dated 26 October, kickoff day, when "Hacking starts now" was announced. Ask in `#questions` whether
-   kickoff-day commits are allowed. History has not been and will not be rewritten.
+3. **G3 ordering not verified on a real phone.** Stage A click-to-chat is tested locally only: the backend builds the
+   `wa.me` link and stores the proposal. The link has NOT yet been opened on a real phone, and an order message has NOT
+   yet been confirmed as received by the seller. The real ordering journey is unvalidated until both happen.
+4. **Open question for the organisers:** SPEC says "The repository starts on 27 October", but the first commit
+   (`34dfff0`) is dated 26 October, kickoff day, when "Hacking starts now" was announced. Ask in `#questions` whether
+   kickoff-day commits are allowed. Commit timestamps have been preserved exactly and will not be falsified or altered
+   for hackathon compliance.
 
 ## Findings from Meta's docs (read 2026-10-26, dev.meta.ai/docs)
 
@@ -75,11 +79,11 @@ line to `runs/_smoke/smoke_log.jsonl`, and a row in `model_calls`.
 | A. Foundation (FastAPI, settings, SQLite v1, JSON logs, run IDs, safe paths, upload limits, health) | Done | tests/test_basics.py, tests/test_web.py |
 | B. Domain (approval, hidden, shops, snapshots, proposals, wa.me) | Done | tests/test_catalogue.py, tests/test_orders.py |
 | C. Seller review UI (Jinja + HTMX, mobile) | Done, checked in a browser at 375 px on the fixture | |
-| D. Shop page and Stage A click-to-chat ordering | Done, checked in a browser on the fixture | |
+| D. Shop page and Stage A click-to-chat ordering | Done locally, checked in a browser on the fixture; **not verified on a real phone** (G3) | |
 | E. Pipeline: ingest, keyframes, cutouts from SAM masks, association, regex prices, stage CLI | Done offline | tests/test_cli.py, tests/test_sam_transcribe.py |
 | E. Adapters: SAM, transcription, Muse Spark | Built from docs; **unconfirmed live** | mocked-transport tests only |
 | F. Evaluation script and label schema | Done; no real labels | tests/test_eval.py |
-| G. Safety tests | Done | 106 tests pass |
+| G. Safety tests | Done | 107 tests pass |
 | Stage B agent, Muse Image, Glimmer, public intake | Not started (P2/P3) | |
 
 ## Verified local facts

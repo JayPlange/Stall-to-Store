@@ -27,6 +27,8 @@ def test_live_flag_still_blocked_when_calls_disabled(cli_env, conn):
     run = create_run(conn, video_path="placeholder/input/source.mp4")
     rd = run_dir(cli_env.runs_dir, run["id"], create=True)
     (rd / "audio.wav").write_bytes(b"RIFF")
+    (rd / "normalised.mp4").write_bytes(b"not-a-real-video")
+    (rd / "metadata.json").write_text(json.dumps({"normalised": "normalised.mp4", "frame_fps": 2.0, "frame_count": 4}))
     assert cli.main(["transcribe", run["id"], "--live"]) == 2
     assert conn.execute("SELECT COUNT(*) FROM model_calls").fetchone()[0] == 0
     assert cli.main(["track", run["id"], "--live"]) == 2
@@ -43,7 +45,7 @@ def test_offline_stages_from_artefacts(cli_env, conn):
     run = create_run(conn)
     rd = run_dir(cli_env.runs_dir, run["id"], create=True)
     art = rd / "artefacts"
-    (rd / "metadata.json").write_text(json.dumps({"width": 1280, "height": 720}))
+    (rd / "metadata.json").write_text(json.dumps({"frame_width": 1280, "frame_height": 720, "frame_fps": 2.0}))
     (art / "transcript.json").write_text(json.dumps({"text": "milk 12 cedis", "granularity": "word", "units": [
         {"text": "the milk is 12 cedis", "t_start": 2.0, "t_end": 3.0, "confidence": None}]}))
     (art / "tracks.json").write_text(json.dumps({"tracks": [{"track_id": "t1", "label": "product", "frames": [

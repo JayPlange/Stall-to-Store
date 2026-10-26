@@ -53,14 +53,14 @@ def save_keyframe(track: Track, frame_path_for, out_dir: Path) -> Path | None:
     return out
 
 
-def make_cutout(frame_path: Path, mask_path: Path, box_xyxy, out_path: Path) -> Path:
-    """Composite the masked object on white and crop to its box. Mask: white = object."""
+def make_cutout(frame_path: Path, mask_path: Path, mask_box, out_path: Path) -> Path:
+    """Real pixels inside SAM's mask on white. The mask raster covers mask_box (half-open, frame pixels)."""
+    left, top, right, bottom = (int(round(v)) for v in mask_box)
     with Image.open(frame_path) as frame, Image.open(mask_path) as mask:
-        frame = frame.convert("RGB")
-        mask = mask.convert("L").resize(frame.size)
-        white = Image.new("RGB", frame.size, "white")
-        composed = Image.composite(frame, white, mask)
-        hit = FrameHit(0, 0.0, tuple(box_xyxy))
+        region = frame.convert("RGB").crop((left, top, right, bottom))
+        alpha = mask.convert("L").resize(region.size, Image.NEAREST)
+        out = Image.new("RGB", region.size, "white")
+        out.paste(region, (0, 0), alpha)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        composed.crop(_crop_box(hit, *frame.size)).save(out_path, quality=92)
+        out.save(out_path, quality=92)
     return out_path

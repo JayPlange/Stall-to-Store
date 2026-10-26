@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 from app.models.base import AdapterNotVerified, CallContext, MetaClient
+from app.models.pricing import spark_cost
 from app.models.types import Crop, PriceMention, ProductGuess, Transcript
 from app.money import PriceError, parse_cedis
 
@@ -70,7 +71,8 @@ def identify(client: MetaClient, ctx: CallContext, crops: list[Crop], model: str
         content += [{"type": "image_url", "image_url": {"url": _data_url(Path(c.image_path))}} for c in batch]
         body = {"model": model, "messages": [{"role": "user", "content": content}],
                 "response_format": _response_format("products", IDENTIFY_SCHEMA)}
-        result = client.request(ctx, model, "POST", "/chat/completions", json_body=body)
+        result = client.request(ctx, model, "POST", "/chat/completions", json_body=body,
+                                estimate_cost=lambda b: spark_cost(model, b.get("usage") if isinstance(b, dict) else None))
         parsed = _structured_content(result.body)
         by_index = {p.get("index"): p for p in parsed.get("products", []) if isinstance(p, dict)}
         for i, crop in enumerate(batch):
@@ -91,7 +93,8 @@ def parse_prices(client: MetaClient, ctx: CallContext, transcript: Transcript, m
               "as digits (e.g. '12' or '12.50'), referent is the words naming what the price is for, or null.")
     body = {"model": model, "messages": [{"role": "user", "content": prompt}],
             "response_format": _response_format("price_mentions", PRICES_SCHEMA)}
-    result = client.request(ctx, model, "POST", "/chat/completions", json_body=body)
+    result = client.request(ctx, model, "POST", "/chat/completions", json_body=body,
+                                estimate_cost=lambda b: spark_cost(model, b.get("usage") if isinstance(b, dict) else None))
     parsed = _structured_content(result.body)
     mentions = []
     n = len(transcript.units)

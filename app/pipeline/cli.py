@@ -7,9 +7,11 @@
     python -m app.pipeline.cli keyframes  <run_id>
     python -m app.pipeline.cli identify   <run_id> --live
     python -m app.pipeline.cli associate  <run_id>
+    python -m app.pipeline.cli cutouts    <run_id>
 
 Artefacts in runs/{run_id}/artefacts/: transcript.json, price_mentions.json, tracks.json,
-keyframes.json, guesses.json, association.json. Each stage can be re-run alone.
+keyframes.json, guesses.json, association.json, cutouts.json. Each stage can be re-run alone.
+`track` sends ONE request per --prompts entry (each billed per frame): start with a single prompt.
 """
 import argparse
 import json
@@ -27,7 +29,7 @@ from app.models.base import AdapterNotVerified, CallContext, LiveCallsDisabled, 
 from app.models.types import Crop, PriceMention, Track, Transcript
 from app.pipeline.associate import associate
 from app.pipeline.ingest import ingest
-from app.pipeline.keyframes import save_keyframe
+from app.pipeline.keyframes import best_frame, make_cutout, save_keyframe
 from app.pipeline.prices_regex import regex_mentions
 
 LIVE_STAGES = {"transcribe", "track", "identify"}
@@ -47,11 +49,12 @@ def _write(path: Path, data) -> None:
 def main(argv: list[str] | None = None) -> int:
     configure_logging()
     ap = argparse.ArgumentParser()
-    ap.add_argument("stage", choices=["ingest", "transcribe", "prices", "track", "keyframes", "identify", "associate"])
+    ap.add_argument("stage", choices=["ingest", "transcribe", "prices", "track", "keyframes", "identify", "associate",
+                                      "cutouts"])
     ap.add_argument("run_id")
     ap.add_argument("--live", action="store_true", help="allow this stage to make a paid model call")
     ap.add_argument("--regex", action="store_true", help="prices: use the regex fallback, no model call")
-    ap.add_argument("--prompts", default="product,packet,bottle,tin,box", help="track: SAM text prompts")
+    ap.add_argument("--prompts", default="product package", help="track: ';'-separated SAM noun phrases")
     args = ap.parse_args(argv)
 
     s = get_settings()
@@ -82,8 +85,16 @@ def main(argv: list[str] | None = None) -> int:
             ms = regex_mentions(t) if args.regex else vision.parse_prices(client, ctx, t, s.vision_model)
             _write(art / "price_mentions.json", {"granularity": t.granularity, "mentions": [asdict(m) for m in ms]})
         elif args.stage == "track":
-            tracks = segment.track(client, ctx, s.runs_dir / run["video_path"], args.prompts.split(","), s.segment_model)
-            _write(art / "tracks.json", {"tracks": [asdict(t) for t in tracks]})
+            meta = _read(rdir / "metadata.json")
+            prompts = [p.strip() for p in args.prompts.split(";") if p.strip()]
+            tracks, diags = segment.track(client, ctx, rdir / meta["normalised"], prompts, s.segment_model,
+                                          meta["frame_fps"], meta["frame_count"], rdir / "artefacts" / "masks")
+            for t in tracks:
+                for h in t.frames:
+                    if h.mask_path:
+                        h.mask_path = relative_to_runs(s.runs_dir, Path(h.mask_path))
+            _write(art / "tracks.json", {"prompts": prompts, "diagnostics": diags,
+                                         "tracks": [asdict(t) for t in tracks]})
         elif args.stage == "keyframes":
             tracks = [Track.from_dict(t) for t in _read(art / "tracks.json")["tracks"]]
             frames = {f["frame_idx"]: rdir / "frames" / f["file"] for f in _read(rdir / "frames.json")["frames"]}
@@ -105,8 +116,8 @@ def main(argv: list[str] | None = None) -> int:
             guesses = {g["track_id"]: g for g in _read(art / "guesses.json")}
             kfs = _read(art / "keyframes.json")
             names = {tid: (g.get("name") or None) for tid, g in guesses.items()}
-            decisions, per_track = associate(mentions, tracks, pm["granularity"], s.frame_fps,
-                                             meta["width"], meta["height"], names)
+            decisions, per_track = associate(mentions, tracks, pm["granularity"], meta["frame_fps"],
+                                             meta["frame_width"], meta["frame_height"], names)
             proposals = [catalogue.ProductProposal(t.track_id, guesses.get(t.track_id, {}).get("brand"),
                                                    guesses.get(t.track_id, {}).get("name"),
                                                    guesses.get(t.track_id, {}).get("size"), kfs.get(t.track_id),
@@ -115,6 +126,22 @@ def main(argv: list[str] | None = None) -> int:
             _write(art / "association.json", {"mentions": [asdict(d) for d in decisions],
                                               "tracks": {k: asdict(v) for k, v in per_track.items()}})
             catalogue.store_draft(conn, args.run_id, proposals, mentions, decisions, per_track)
+        elif args.stage == "cutouts":
+            tracks = {t["track_id"]: Track.from_dict(t) for t in _read(art / "tracks.json")["tracks"]}
+            frames = {f["frame_idx"]: rdir / "frames" / f["file"] for f in _read(rdir / "frames.json")["frames"]}
+            made = {}
+            for p in catalogue.list_products(conn, args.run_id):
+                t = tracks.get(p["track_id"])
+                best = best_frame(t, lambda i: frames.get(i, Path("missing"))) if t else None
+                hit = best[0] if best else None
+                if not hit or not hit.mask_path or not hit.mask_box:
+                    continue
+                out = make_cutout(frames[hit.frame_idx], s.runs_dir / hit.mask_path, hit.mask_box,
+                                  rdir / "cutouts" / f"{t.track_id}.jpg")
+                made[t.track_id] = relative_to_runs(s.runs_dir, out)
+                conn.execute("UPDATE products SET cutout_path = ? WHERE id = ?", (made[t.track_id], p["id"]))
+            conn.commit()
+            _write(art / "cutouts.json", made)
         catalogue.set_run_status(conn, args.run_id, catalogue.get_run(conn, args.run_id)["status"], args.stage)
     except (LiveCallsDisabled, AdapterNotVerified) as exc:
         print(f"{args.stage}: {exc}", file=sys.stderr)

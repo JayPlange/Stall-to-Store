@@ -43,6 +43,7 @@ class FrameHit:
     box_xyxy: tuple[float, float, float, float]
     mask_path: str | None = None
     score: float | None = None
+    mask_box: tuple[float, float, float, float] | None = None  # half-open bounds the mask raster covers
 
 
 @dataclass
@@ -53,7 +54,8 @@ class Track:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Track":
-        hits = [FrameHit(h["frame_idx"], h["t"], tuple(h["box_xyxy"]), h.get("mask_path"), h.get("score"))
+        hits = [FrameHit(h["frame_idx"], h["t"], tuple(h["box_xyxy"]), h.get("mask_path"), h.get("score"),
+                         tuple(h["mask_box"]) if h.get("mask_box") else None)
                 for h in data.get("frames", [])]
         return cls(data["track_id"], data.get("label", ""), hits)
 

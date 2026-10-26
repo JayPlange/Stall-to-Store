@@ -67,6 +67,18 @@ def test_valid_upload_ingests(client, settings, sample_video):
     assert frames["fps"] == 2.0 and len(frames["frames"]) in (12, 13)
     meta = json.loads((rdir / "metadata.json").read_text())
     assert meta["has_audio"] and 5.5 < meta["duration_s"] < 6.5
+    # SAM receives normalised.mp4; its frame count must equal ours so frame N means the same image.
+    from app.pipeline.ingest import probe
+    norm = probe(rdir / "normalised.mp4")
+    assert not norm.has_audio and (meta["frame_width"], meta["frame_height"]) == (320, 240)
+    import subprocess
+    count = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries",
+                            "stream=nb_read_frames", "-of", "csv=p=0", str(rdir / "normalised.mp4")],
+                           capture_output=True, text=True).stdout.strip()
+    assert int(count) == len(frames["frames"])
+    import wave
+    with wave.open(str(rdir / "audio.wav")) as w:
+        assert (w.getframerate(), w.getnchannels(), w.getsampwidth()) == (24000, 1, 2)
 
 
 def test_fixture_route_disabled_by_default(client):

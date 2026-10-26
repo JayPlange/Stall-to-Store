@@ -13,7 +13,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -103,13 +103,14 @@ class MetaClient:
 
     def _record(self, ctx: CallContext, model: str, endpoint: str, request_summary: dict,
                 status: int | None, headers: dict, body: Any, latency_ms: int, error_type: str | None,
-                secret: str) -> tuple[str, dict]:
+                secret: str, cost_usd: float | None = None) -> tuple[str, dict]:
         units = body.get("usage") if isinstance(body, dict) and isinstance(body.get("usage"), dict) else {}
         path = self._raw_target(ctx)
         artefact = {
             "provider": PROVIDER, "endpoint": endpoint, "model": model, "stage": ctx.stage,
             "run_id": ctx.run_id, "created_at": iso(utcnow()), "http_status": status,
-            "latency_ms": latency_ms, "request_summary": sanitise(request_summary, secret),
+            "latency_ms": latency_ms, "estimated_cost_usd": cost_usd,
+            "request_summary": sanitise(request_summary, secret),
             "response_headers": {k: v for k, v in headers.items() if k.lower() in KEEP_HEADERS},
             "body": sanitise(body, secret),
         }
@@ -119,7 +120,7 @@ class MetaClient:
             "INSERT INTO model_calls(run_id, stage, model, provider, endpoint, ok, http_status, error_type,"
             " latency_ms, units_json, cost_usd, raw_path, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (ctx.run_id, ctx.stage, model, PROVIDER, endpoint, int(error_type is None), status, error_type,
-             latency_ms, json.dumps(units), None, raw_rel, iso(utcnow())),
+             latency_ms, json.dumps(units), cost_usd, raw_rel, iso(utcnow())),
         )
         self.conn.commit()
         return raw_rel, units
@@ -127,7 +128,9 @@ class MetaClient:
     # -- transport --------------------------------------------------------
     def request(self, ctx: CallContext, model: str, method: str, endpoint: str, *,
                 json_body: dict | None = None, files: dict | None = None, data: dict | None = None,
-                accept: str = "application/json", request_summary: dict | None = None) -> CallResult:
+                accept: str = "application/json", request_summary: dict | None = None,
+                estimate_cost: Callable[[Any], float | None] | None = None) -> CallResult:
+        """One HTTP call, never retried. estimate_cost(body) runs on success only."""
         if ctx.run_id:
             validate_run_id(ctx.run_id)
         key = self._key()
@@ -150,8 +153,14 @@ class MetaClient:
         except httpx.HTTPError as exc:
             error_type, body = "transport_error", {"error": {"message": type(exc).__name__}}
         latency_ms = int((time.monotonic() - started) * 1000)
+        cost = None
+        if estimate_cost and not error_type:
+            try:
+                cost = estimate_cost(body)
+            except Exception:  # an estimate must never lose the raw evidence
+                cost = None
         raw_rel, units = self._record(ctx, model, endpoint, summary, status, headers, body,
-                                      latency_ms, error_type, key)
+                                      latency_ms, error_type, key, cost)
         log.info("model_call", extra={"ctx": {"run_id": ctx.run_id, "stage": ctx.stage, "model": model,
                                               "endpoint": endpoint, "status": status, "latency_ms": latency_ms,
                                               "error_type": error_type}})

@@ -9,7 +9,7 @@ full design and [BUILD_STATUS.md](BUILD_STATUS.md) for what works today versus w
 
 ## Run it
 
-Requires Python 3.12 and ffmpeg on `PATH`.
+Requires Python 3.12 and ffmpeg on `PATH`. On Windows, keep the venv at a short path (e.g. `~/.venvs/stall-to-store`) if pip hits the 260-character path limit.
 
 ```bash
 python -m venv .venv
@@ -54,12 +54,12 @@ and its sanitised raw response is saved under `runs/{run_id}/raw/`. Calls are ne
 
 ## Meta model usage
 
-| Stage | Model | Status |
-|---|---|---|
-| Transcribe | Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | Request built from Meta's docs; response mapping waits on a real response |
-| Track | SAM 3.1 (`sam-3.1`) | Interface only; request format not yet verified |
-| Prices, identify | Muse Spark (`muse-spark-1.3`) via Chat Completions + JSON schema | Built from Meta's docs; not yet called live |
-| Ranking, image clean-up, agent | Muse Spark / Muse Image / Muse Glimmer | P2, not started |
+| Stage | Model | How it is called (from Meta's docs) | Status |
+|---|---|---|---|
+| Track | SAM 3.1 (`sam-3.1`) | Responses API, one noun phrase per request, normalised 2 fps MP4; parsed with Meta's `meta-sam-parser` | Built; **not yet run live** |
+| Transcribe | Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | `ENDPOINTING` mode for turn-level timings (no word timings exist) | Built; not yet run live |
+| Prices, identify | Muse Spark (`muse-spark-1.3`) | Chat Completions with JSON schema; images as data URLs | Built; not yet run live |
+| Ranking, image clean-up, agent | Muse Spark / Muse Image / Muse Glimmer | | P2, not started |
 
 No result in this repository is presented as model output unless it came from a logged live call.
 

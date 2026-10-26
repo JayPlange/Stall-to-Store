@@ -6,7 +6,8 @@ import pytest
 from pydantic import SecretStr
 
 from app.artefacts import new_run_id
-from app.models import segment, transcribe, vision
+from app.models import transcribe, vision
+from app.models.pricing import spark_cost
 from app.models.base import AdapterNotVerified, CallContext, LiveCallsDisabled, MetaClient, ProviderError, sanitise
 from app.models.types import Crop, Transcript, Unit
 
@@ -64,7 +65,8 @@ def test_success_saves_sanitised_raw_and_logs_call(settings, conn, tmp_path):
     assert FAKE_KEY not in raw and "base64," not in raw and "data-url redacted" in raw
     row = conn.execute("SELECT * FROM model_calls").fetchone()
     assert row["ok"] == 1 and row["stage"] == "identify" and json.loads(row["units_json"])["total_tokens"] == 15
-    assert row["cost_usd"] is None  # never invented
+    # Estimate from Meta's published price (10 prompt + 5 completion tokens), never a model's claim.
+    assert row["cost_usd"] == spark_cost("muse-spark-1.3", {"prompt_tokens": 10, "completion_tokens": 5})
 
 
 def test_billing_error_is_recorded_and_not_retried(settings, conn):
@@ -119,14 +121,6 @@ def test_transcribe_normalisation_refuses_until_verified(settings, conn, tmp_pat
     assert b"multipart/form-data" in rec.requests[0].headers["content-type"].encode()
     with pytest.raises(ValueError):
         transcribe.transcribe(MetaClient(s, conn), CallContext(None, "t"), tmp_path / "a.mp3", "m")
-
-
-def test_segment_makes_no_call(settings, conn, tmp_path):
-    rec = Recorder([])
-    with pytest.raises(AdapterNotVerified):
-        segment.track(MetaClient(live(settings), conn, httpx.MockTransport(rec)), CallContext(None, "track"),
-                      tmp_path / "v.mp4", ["product"], "sam-3.1")
-    assert rec.requests == []
 
 
 def test_sanitise():

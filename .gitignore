@@ -30,3 +30,6 @@ __pycache__/
 
 # Local editor/launch config
 .claude/
+
+# Private notes (security incidents, local only)
+.private/

@@ -49,40 +49,47 @@ Tests (no network, no API key, no paid calls):
    WhatsApp.** The seller confirms the reference on the review page; confirmation re-checks expiry and that
    prices have not changed since the proposal.
 
-Model stages run one at a time, only when asked:
+Uploading a video runs every stage in the background, with a progress screen. The draft is usually ready in about
+3 minutes. Stages can also be run one at a time:
 
 ```bash
 python -m app.pipeline.cli transcribe <run_id> --live
 ```
 
-The `overlay` stage draws SAM's real tracking over the footage for the review page. Live stages also need `STS_ALLOW_LIVE_MODEL_CALLS=true` and `MODEL_API_KEY`. Every call is logged to `model_calls`,
+The `overlay` stage draws SAM's real tracking over the footage for the review page. Live stages need `STS_ALLOW_LIVE_MODEL_CALLS=true` and `MODEL_API_KEY`. Every call is logged to `model_calls`,
 and its sanitised raw response is saved under `runs/{run_id}/raw/`. Calls are never retried automatically.
 
 ## Project status
 
-One real seller-style video has gone through the whole path: video, tracking, narration, prices, names, seller
-review, a published shop, and an order that reached WhatsApp and was confirmed. That is one tuning clip, so the
-results below are a small first benchmark, not a measured accuracy.
+A single upload now runs the whole pipeline and produces a draft for the seller to approve. It has been run on one
+real video using Meta's live API, so the results below are a small first benchmark, not a measured accuracy.
 
-**Verified with live Meta calls:**
+**Verified with live Meta calls on a real seller-style video:**
 
-| Model | Job | Real result on the clip |
+| Model | Job | Result |
 |---|---|---|
 | SAM 3.1 (`sam-3.1`) | Find and track products | Two searches ("product package", "bottle") found all 7 product types across 135 frames |
-| Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | Hear the narration | All 7 products and prices heard; "Ghana cedis" correct; one 65 s turn, so no useful timing |
-| Muse Spark (`muse-spark-1.3`) | Read prices, name products, link prices to products | 7 of 7 prices extracted; product names read from photos; 7 of 7 prices linked to the right products |
+| Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | Hear the narration | All 7 products and prices heard; "Ghana cedis" correct; one long turn, so no useful timing |
+| Muse Spark (`muse-spark-1.3`) | Read prices, name products, link prices to products | 7 of 7 prices extracted and linked to the right products, on all three runs where it matched |
 
-**Tested locally (pytest, no network, no API key):** upload validation, ffmpeg ingest, price association, seller
-review and publishing, shop page, order safeguards, evaluation maths, and adapter behaviour against mocked responses.
+**End to end on real data:**
+- One upload produced a full draft in about 3 minutes, with no manual steps. The photos and tracking video finish after
+  that, at about 11 to 14 minutes in total.
+- A published shop took an order through WhatsApp Web. The seller's WhatsApp received it, and it was confirmed on the
+  review page. The customer side has not yet been tried in a phone browser.
 
-**Verified by hand on the real clip:** a published shop, and order S2S-KPU3XE sent through WhatsApp Web, received by
-the seller's WhatsApp, and confirmed on the review page. The customer side has not yet been tried on a phone browser.
+**Tested locally (pytest, no network, no API key):** upload validation, ffmpeg ingest, track merging, price
+association, seller review and publishing, shop page, order safeguards, evaluation maths, and the whole pipeline
+against mocked responses, including failure and double-click handling.
 
 **Known limits:**
-- Results come from one clip. SAM thresholds, the word lists and Muse Spark's confidence cut-off are tuned on it.
-- Muse Spark links ran on this clip after the draft existed. The full pipeline has not yet run them from start to finish.
+- All results come from one clip, which was also used for tuning. Each run varies a little: SAM's object count and the
+  transcript both changed between runs.
+- Word lists, confidence cut-offs and match thresholds are tuned on this clip.
+- Filters can remove a real item that is too small or blurry to read. On one run this removed one of three Comfort
+  sachets. The removal is recorded in the run's files, but the seller is not told.
 - The clip is 640×360, so product photos are soft.
-- Review links are private URLs with no login or CSRF protection: demo only.
+- The hosted version is not live. Review links are private URLs with no login or CSRF protection: demo only.
 
 **Planned, not started:** Muse Image background clean-up, grouping identical items into one listing, and a WhatsApp
 agent (Muse Glimmer or Muse Spark).
@@ -94,23 +101,23 @@ is presented as model output unless it came from a logged live call.
 
 `python eval/run_eval.py` prints the SPEC section 12 table for labelled real runs (label schema:
 [eval/labels/SCHEMA.md](eval/labels/SCHEMA.md)). It shows each metric's numerator and denominator,
-reports precision together with coverage, and skips fixture runs.
+reports precision together with coverage, and skips fixture runs. Add `--labels eval/labels_automatic` for the
+automatic run below.
 
-**First benchmark: 1 video, 7 products (tuning clip, no held-out videos yet):**
+**First benchmark: 1 video, 7 products (tuning clip, no held-out videos):**
 
-| Metric | Result | Target |
+| Metric | Automatic run (no seller edits) | Target |
 |---|---|---|
 | Detection recall | 7/7 | ≥80% |
-| Duplicate rate | 1/7 (three separate Comfort sachets count as one product with three tracks) | ≤10% |
-| Identification accuracy | 6/7 (the first Comfort crop was too blurry to name) | ≥80% |
-| Auto-match precision, before Muse Spark | 3/3 | ≥90% |
-| Auto-match coverage, before Muse Spark | 3/9 tracks | report |
+| Duplicate rate | 1/7 (two Comfort sachets count as one product with two tracks) | ≤10% |
+| Identification accuracy | 5/7 ("AILYON" missing its S; one Comfort card had no product name) | ≥80% |
+| Auto-match precision | 8/8 | ≥90% |
+| Auto-match coverage | 8/8 | report |
 | Muse Spark price links | 7/7 | report |
-| Seller corrections | 9 | lower |
-| End-to-end completion | 1/1 | report |
-| Time to shop | about 40 minutes, including building and testing during the run | report |
-| Cost per video | about $0.11 estimated, including one extra SAM search and a repeat naming call | report |
-| Order safety failures | 0 of 1 confirmed orders | 0 |
+| Cost per video | about $0.12 estimated | report |
+
+Duplicate rate and identification miss their targets on this run. The separate first run, which went on to publishing,
+recorded 1/1 end-to-end completion and 0 order safety failures across 1 confirmed order.
 
 ## Privacy
 

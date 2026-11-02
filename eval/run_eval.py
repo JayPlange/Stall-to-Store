@@ -45,6 +45,7 @@ class VideoResult:
     identification: Ratio = field(default_factory=Ratio)
     auto_precision: Ratio = field(default_factory=Ratio)
     auto_coverage: Ratio = field(default_factory=Ratio)
+    spark_links: Ratio = field(default_factory=Ratio)
     corrections: int = 0
     published: bool = False
     time_to_shop_s: float | None = None
@@ -90,7 +91,23 @@ def identification_correct(product: dict, label: dict) -> bool:
     return name_ok and brand_ok
 
 
-def evaluate_run(conn, label: dict) -> VideoResult:
+def score_price_links(run_path: Path, label: dict) -> Ratio:
+    """Prices Muse Spark linked to exactly the right tracks. 0/0 when the optional link stage did not run."""
+    art = run_path / "artefacts"
+    if not (art / "price_links.json").is_file():
+        return Ratio()
+    links = json.loads((art / "price_links.json").read_text(encoding="utf-8"))["links"]
+    mentions = json.loads((art / "price_mentions.json").read_text(encoding="utf-8"))["mentions"]
+    prices = {p["label_id"]: p.get("price_pesewas") for p in label["products"]}
+    correct = 0
+    for link in links:
+        amount = mentions[link["mention_index"]]["amount_pesewas"]
+        want = {t for t, lid in label["track_to_label"].items() if lid and prices[lid] == amount}
+        correct += bool(want) and set(link["track_ids"]) == want
+    return Ratio(correct, len(links))
+
+
+def evaluate_run(conn, label: dict, runs_dir: Path | None = None) -> VideoResult:
     run = conn.execute("SELECT * FROM runs WHERE id = ?", (label["run_id"],)).fetchone()
     if not run:
         raise LabelError(f"{label['video']}: run {label['run_id']} not in database")
@@ -122,6 +139,8 @@ def evaluate_run(conn, label: dict) -> VideoResult:
     priced = [p for p in products if (lid := mapping.get(p["track_id"])) and labels[lid].get("price_pesewas")]
     r.auto_coverage = Ratio(sum(1 for p in priced if p["match_status"] == "auto"), len(priced))
 
+    if runs_dir is not None:
+        r.spark_links = score_price_links(Path(runs_dir) / run["id"], label)
     ids = [p["id"] for p in products]
     if ids:
         marks = ",".join("?" * len(ids))
@@ -151,7 +170,8 @@ def evaluate_run(conn, label: dict) -> VideoResult:
 
 
 def format_table(results: list[VideoResult], title: str) -> str:
-    agg = {k: Ratio() for k in ("detection", "duplicates", "identification", "auto_precision", "auto_coverage")}
+    agg = {k: Ratio() for k in ("detection", "duplicates", "identification", "auto_precision", "auto_coverage",
+                                "spark_links")}
     for r in results:
         for k in agg:
             agg[k].add(getattr(r, k))
@@ -169,6 +189,7 @@ def format_table(results: list[VideoResult], title: str) -> str:
         ("Identification accuracy", agg["identification"].fmt(), "found products, model brand+name correct", ">=80%"),
         ("Auto-match precision", agg["auto_precision"].fmt(), "auto-matched products with correct price", ">=90%"),
         ("Auto-match coverage", agg["auto_coverage"].fmt(), "priced products auto-matched", "report"),
+        ("Muse Spark price links", agg["spark_links"].fmt(), "spoken prices linked to exactly the right tracks", "report"),
         ("Seller corrections", str(sum(r.corrections for r in results)), f"edits across {n} videos", "lower"),
         ("End-to-end completion", Ratio(published, n).fmt(), "videos with a published shop", "report"),
         ("Time to shop", f"median {sorted(times)[len(times) // 2]:.0f}s" if times else "n/a (none published)",
@@ -202,7 +223,7 @@ def main(argv=None) -> int:
         label = load_label(path)
         if args.split != "all" and label["split"] != args.split:
             continue
-        r = evaluate_run(conn, label)
+        r = evaluate_run(conn, label, s.runs_dir)
         if r.source != "real" and not args.include_fixtures:
             print(f"skipping {r.video}: run is a {r.source}, not a real model run", file=sys.stderr)
             continue

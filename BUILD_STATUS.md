@@ -1,111 +1,80 @@
 # Build status
 
-Last updated: 2026-10-26 (Day 0). **Live access verified for listing and Muse Spark text only.** SAM 3.1, transcription and
-vision adapters follow Meta's published docs but are not yet confirmed against real responses.
+Last updated: 2026-11-02. One real clip has gone through the full path. All figures below come from that one clip,
+which is a tuning clip, so treat them as a first benchmark rather than measured accuracy.
 
-## Gate G1a, one model at a time
+## Gates
 
-Each row passes only on its own real response. A working `models` or `chat` call proves account access only. It does
-not show that SAM video segmentation or transcription works.
+| Gate | Status |
+|---|---|
+| G1a: real outputs usable from code | **PASS** for SAM 3.1, Muse Voice Transcribe and Muse Spark (text and vision) |
+| G1b: detection recall ≥80%, auto-match precision ≥90% | **PASS on one tuning clip:** 7/7 detection with two SAM prompts; 3/3 precision before Muse Spark |
+| G2: eval prints the table | **Partial:** table runs on one real video; SPEC's gate asks for two |
+| G3: real video to approved shop, real order reaches the seller | **PASS with a limit:** order S2S-KPU3XE went through WhatsApp Web, the seller received it, and it was confirmed. Not yet tried on a phone browser |
+| G4: full flow, rough demo exists | Flow done across separate steps; no demo recorded yet |
 
-| Check | Command (one paid call each) | Proves | Status |
-|---|---|---|---|
-| Key and listing | `smoke_meta.py models --yes` | Auth works | **PASS** 2026-10-26 18:24 UTC: HTTP 200, 1,780 ms, no usage units. Lists `sam-3.1`, `muse-voice-transcribe-1.0`, `muse-spark-1.3` (+1.2, 1.1, contributor variants), `muse-image-1.0`, `muse-wonder-1.0`. Shape `{object, data[{id, object, created, owned_by}]}` |
-| Muse Spark text (billed) | `smoke_meta.py chat --yes` | Billed calls work; Chat Completions shape | **PASS** 18:24 UTC: HTTP 200, 3,219 ms, reply `ok`, finish `stop`. Usage: 15 prompt / 154 completion tokens, **144 of them reasoning**. Est. $0.000673. Shape matches docs: `{id, object, created, model, choices, usage{prompt_tokens, completion_tokens, total_tokens, completion_tokens_details{reasoning_tokens}, prompt_tokens_details{cached_tokens}}}` |
-| Muse Voice Transcribe | `smoke_meta.py transcribe --yes --audio runs/_smoke/speech_sample.wav` | Turn timings (`startMs`/`endMs`) come back | Not run |
-| **SAM 3.1 video** | `smoke_meta.py sam --yes --video <clip.mp4> --prompt "product package"` | Tracks, boxes and masks on real footage. **The hardest risk.** | Not run; needs a real clip |
-| Muse Spark vision | first `identify` on real keyframes | Product names from crops | Not run |
+## Live calls (10, about $0.11 estimated)
 
-`runs/_smoke/speech_sample.wav` is a local Windows TTS clip saying three prices. It is synthetic speech for checking
-the response format, not seller narration. Each smoke call writes a sanitised raw response to `runs/_smoke/raw/`, a
-line to `runs/_smoke/smoke_log.jsonl`, and a row in `model_calls`.
+Estimates use Meta's published prices. The dashboard is the source of truth for billing.
 
-## Blockers
-
-1. **No real product clip yet** for the SAM 3.1 check. SAM is the hardest open risk.
-   Billed Muse Spark calls succeed, so the payment restriction does not block this key. That is not yet shown for SAM or transcription.
-2. **No footage or labels yet.** G1b, G2 and G3 cannot start without them.
-3. **G3 ordering not verified on a real phone.** Stage A click-to-chat is tested locally only: the backend builds the
-   `wa.me` link and stores the proposal. The link has NOT yet been opened on a real phone, and an order message has NOT
-   yet been confirmed as received by the seller. The real ordering journey is unvalidated until both happen.
-4. **Open question for the organisers:** SPEC says "The repository starts on 27 October", but the first commit
-   (`34dfff0`) is dated 26 October, kickoff day, when "Hacking starts now" was announced. Ask in `#questions` whether
-   kickoff-day commits are allowed. Commit timestamps have been preserved exactly and will not be falsified or altered
-   for hackathon compliance.
-
-## Findings from Meta's docs (read 2026-10-26, dev.meta.ai/docs)
-
-- **Transcription has no word-level timestamps.** The docs say timings are turn-level only (`turns[].startMs/endMs`),
-  and `turns` is empty in the default `PUSH_TO_TALK` mode. The adapter originally used that mode (copied from the API
-  example); that would have sent every price to the seller untimed. It now requests `ENDPOINTING` and maps turns to
-  `segment` granularity, so price windows are whole turns (SPEC section 7).
-- **SAM 3.1**:
-  - Request: `POST /v1/responses` with `input_text` (ONE noun phrase per request; lists return zero matches) and
-    `input_video` (URL or base64 data URL). MP4 or MOV with H.264, H.265 or MPEG-4; up to 15,000 frames and 16
-    objects per frame.
-  - Output: text with one line per frame (`<Nf>`), then object id, box and base85 mask. Object ids are stable while
-    an object stays in view.
-  - Parsing uses Meta's official `meta-sam-parser==0.1.0` (SAM License; source read before install: pure parsing,
-    no I/O or network). Its boxes are half-open pixel bounds (x2+1).
-- **Muse Spark accepts MP4 video including its audio** (`input_video`, Responses API). This is a possible fallback for
-  both transcription and identification. Not used yet.
-- **Prices** (estimates only; re-check before batches):
-  - SAM: $0.20 per 1,000 frames, minimum 50 per request.
-  - Transcribe: $0.18 per audio hour, in whole seconds.
-  - Muse Spark 1.3: $1.25 input / $4.25 output per 1M tokens.
-  - Muse Image: $0.01 per image.
-  - The docs describe no spend cap.
-- Model API base is `https://api.meta.ai/v1`, with bearer `MODEL_API_KEY`. 402 is `billing_error`. Do not retry
-  400/401/402/403/404/413.
-
-## Design decisions made today
-
-- **One normalised video feeds SAM and our frames.** Ingest writes `normalised.mp4` (2 fps, long side at most
-  1,280 px, H.264, faststart, no audio) and extracts frames from that same file. SAM frame N is therefore our frame N
-  at t = N/2, in the same pixel space. A test checks the frame counts match.
-- **Estimated cost per 60 s video:**
-  - SAM: 120 frames, about $0.024 per prompt.
-  - Transcription: about $0.003.
-  - Muse Spark (prices plus identification): token-dependent, measured on the first live run.
-  - `track` defaults to a single prompt (`"product package"`); each extra prompt is billed again.
-- `model_calls.cost_usd` holds the estimate computed from documented usage and prices. It is never a model's claim
-  and stays NULL when units are missing.
-- Audio is extracted at 24 kHz mono 16-bit, the transcriber's documented native rate.
-
-## Milestones
-
-| Area | State | Evidence |
+| Call | Result | Est. cost |
 |---|---|---|
-| A. Foundation (FastAPI, settings, SQLite v1, JSON logs, run IDs, safe paths, upload limits, health) | Done | tests/test_basics.py, tests/test_web.py |
-| B. Domain (approval, hidden, shops, snapshots, proposals, wa.me) | Done | tests/test_catalogue.py, tests/test_orders.py |
-| C. Seller review UI (Jinja + HTMX, mobile) | Done, checked in a browser at 375 px on the fixture | |
-| D. Shop page and Stage A click-to-chat ordering | Done locally, checked in a browser on the fixture; **not verified on a real phone** (G3) | |
-| E. Pipeline: ingest, keyframes, cutouts from SAM masks, association, regex prices, stage CLI | Done offline | tests/test_cli.py, tests/test_sam_transcribe.py |
-| E. Adapters: SAM, transcription, Muse Spark | Built from docs; **unconfirmed live** | mocked-transport tests only |
-| F. Evaluation script and label schema | Done; no real labels | tests/test_eval.py |
-| G. Safety tests | Done | 107 tests pass |
-| Stage B agent, Muse Image, Glimmer, public intake | Not started (P2/P3) | |
+| List models | 200, 1.8 s | none reported |
+| Muse Spark chat | 200, 3.2 s; 144 of 154 output tokens were reasoning | $0.0007 |
+| Transcribe, synthetic speech | 200, 6.8 s; one turn; "cedis" heard as "sadies" | $0.0005 |
+| SAM "product package" | 200, 35.6 s; 8 tracks, 135 frames | $0.027 |
+| Transcribe, real clip | 200, 16.7 s; "Ghana cedis" correct; one 65 s turn | $0.0034 |
+| Muse Spark price extraction | 200, 15.3 s; 7 of 7 prices | $0.0124 |
+| Muse Spark naming, 8 crops | 200, 19.5 s; correct names; nothing invented for floor tile | $0.0170 |
+| SAM "bottle" | 200, 13.8 s; found Vim and Bel-Aqua, plus 2 tracks dropped by merging | $0.027 |
+| Muse Spark naming, 2 crops | 200, 13.5 s; Vim and Bel-Aqua named | $0.0080 |
+| Muse Spark price linking | 200, 11.4 s; 7 of 7 exact | $0.0135 |
 
-## Verified local facts
+`model_calls.run_id` for this clip's smoke calls was set afterwards, so `run_eval.py` reports the right cost.
 
-- Python 3.12.10 venv at `~/.venvs/stall-to-store`, outside the project. It was put there because the original
-  session folder's path exceeded Windows' 260-character limit inside pip. ffmpeg/ffprobe 9.0 are on `PATH`.
+## Benchmark: 1 video, 7 products
 
-## Engineering notes
+| Metric | Result | Note |
+|---|---|---|
+| Detection recall | 7/7 | Needed two SAM prompts; "product package" alone found 5 of 7 product types |
+| Duplicate rate | 1/7 | Three real Comfort sachets are three tracks for one product |
+| Identification | 6/7 | Scored on the first Comfort crop, which was too blurry to name |
+| Auto-match precision / coverage, before Spark | 3/3, 3/9 tracks | As stored in the draft |
+| Muse Spark price links | 7/7 | With Spark applied in a dry run: 9 of 9 tracks auto-match with correct prices |
+| Seller corrections | 9 | Includes names, prices and sizes |
+| Time to shop | about 40 minutes | Includes development during the run, so not representative |
+| Cost per video | about $0.11 | Includes an extra SAM search and a repeat naming call |
+| Order safety failures | 0 of 1 | |
 
-- 2026-10-26: the sanitiser redacted every field containing "token", blanking `usage` counts in
-  `runs/_smoke/raw/smoke-chat.json`. It now matches credential names only (test added). The true counts for that call
-  are in `model_calls.units_json` and `runs/_smoke/smoke_log.jsonl`.
+## Open items
 
-## Cost note from the first live call
+1. **Organisers:** SPEC says the repository starts on 27 October, but the first commit (`34dfff0`) is dated 26 October,
+   kickoff day. Ask whether that is allowed. Commit timestamps have been preserved and will not be altered.
+2. **Licence:** not chosen. The owner decides.
+3. **Submission requirements:** the organisers' screenshots were not available in the build session; check against them.
+4. **Publication:** no remote exists. Push `main` only, never `--all` or `--mirror`.
+5. **Demo:** the 3-minute video is not recorded.
 
-- Muse Spark spent 144 reasoning tokens to answer "ok". Output tokens cost $4.25 per 1M, so reasoning will dominate
-  the cost of price parsing and identification. Measure it on the first real run before any batch.
+## Findings
+
+- **Timing:** Muse Voice Transcribe has no word timestamps, and real narration came back as one turn. Timing cannot
+  link prices to products on this clip, so linking relies on names and Muse Spark.
+- **SAM prompts:** one noun phrase per request. "product package" missed the bottle and scourer; "bottle" found them.
+  It also returned a false floor-tile track, which identification correctly left unnamed.
+- **Parsing:** `meta-sam-parser` decodes every mask in pure Python, which took 18 minutes. Masks are now decoded only
+  for the frames used, and parsing takes 0.17 s. The official parser still reads frames, ids, boxes and confidence.
+- **Reasoning tokens:** they dominate Muse Spark's cost. Measure across more clips before relying on the estimate.
+- **Word matching:** on this clip it needed filler and category words removed; "the" once caused a wrong match.
+- **Video:** the clip is 640×360, the owner's recording limit, so product photos are soft.
 
 ## Known gaps
 
-- Association thresholds are placeholders. Tune them on tuning videos only.
-- Tracks from different SAM prompts are not merged. Watch the duplicate-rate metric if you use more than one prompt.
-- Videos are sent inline (20 MB cap on the normalised file). The Files API upload path is not built.
-- Contact-sheet ranking (Step 2) is not built.
-- Review links are bearer URLs, with no login and no CSRF token. Acceptable for the demo only.
+- `link` ran on an existing draft; a full run from `ingest` through `link` and `associate` has not been done in one go.
+- `associate` treats a whole-clip turn as real timing. Keyword hints to transcription are untested.
+- Identical items are separate listings. Muse Image clean-up is not built.
+- Word lists, thresholds and the 0.8 link cut-off are tuned on one clip.
+- Review links are bearer URLs with no login or CSRF token. Demo only.
+
+## Local setup
+
+Python 3.12 venv at `~/.venvs/stall-to-store`; ffmpeg/ffprobe on `PATH`; 127 tests pass.

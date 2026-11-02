@@ -5,7 +5,7 @@ import pytest
 from app.catalogue import publish, set_status, update_product
 from app.fixtures import load_fixture
 from app.orders import service as orders
-from eval.run_eval import LabelError, Ratio, evaluate_run, format_table, load_label
+from eval.run_eval import LabelError, Ratio, evaluate_run, format_table, load_label, score_price_links
 
 
 def _label(run_id, **kw):
@@ -62,3 +62,16 @@ def test_label_validation(tmp_path):
     p.write_text(json.dumps(_label("r", track_to_label={"t1": "nope"})))
     with pytest.raises(LabelError):
         load_label(p)
+
+
+def test_spark_links_scored_on_exact_tracks(tmp_path):
+    art = tmp_path / "artefacts"
+    art.mkdir()
+    (art / "price_mentions.json").write_text(json.dumps({"mentions": [{"amount_pesewas": 100}, {"amount_pesewas": 200}]}))
+    (art / "price_links.json").write_text(json.dumps({"links": [
+        {"mention_index": 0, "track_ids": ["a", "b"]}, {"mention_index": 1, "track_ids": ["a"]}]}))
+    label = {"products": [{"label_id": "x", "price_pesewas": 100}, {"label_id": "y", "price_pesewas": 200}],
+             "track_to_label": {"a": "x", "b": "x", "c": "y"}}
+    result = score_price_links(tmp_path, label)
+    assert (result.num, result.den) == (1, 2)
+    assert (score_price_links(tmp_path / "missing", label).den) == 0

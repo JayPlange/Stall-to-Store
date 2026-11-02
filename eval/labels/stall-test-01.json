@@ -1,0 +1,61 @@
+{
+  "video": "stall-test-01",
+  "split": "tuning",
+  "run_id": "r_20261102T074803_eee23ece",
+  "products": [
+    {
+      "label_id": "softcare",
+      "brand": "Softcare",
+      "name": "Baby Wipes",
+      "price_pesewas": 12000
+    },
+    {
+      "label_id": "kremela",
+      "brand": "Kremela",
+      "name": "Non-Dairy Creamer",
+      "price_pesewas": 8000
+    },
+    {
+      "label_id": "vim",
+      "brand": "Vim",
+      "name": "Multi-Purpose Scourer",
+      "price_pesewas": 13000
+    },
+    {
+      "label_id": "twinings",
+      "brand": "Twinings",
+      "name": "Earl Grey",
+      "price_pesewas": 20000
+    },
+    {
+      "label_id": "belaqua",
+      "brand": "Bel-Aqua",
+      "name": "Premium Still",
+      "price_pesewas": 8200
+    },
+    {
+      "label_id": "comfort",
+      "brand": "Comfort",
+      "name": "Blue Ultra",
+      "price_pesewas": 250
+    },
+    {
+      "label_id": "ailyons",
+      "brand": "Ailyons",
+      "name": "Water Kettle",
+      "price_pesewas": 30000
+    }
+  ],
+  "track_to_label": {
+    "p0o0": "kremela",
+    "p0o1": "twinings",
+    "p0o2": "ailyons",
+    "p0o3": "comfort",
+    "p0o4": "comfort",
+    "p0o5": "softcare",
+    "p0o6": "comfort",
+    "p0o7": null,
+    "p1o0": "vim",
+    "p1o1": "belaqua"
+  }
+}

@@ -1,10 +1,10 @@
 from PIL import Image
 
 from app.fixtures import FIXTURE_MENTIONS, FIXTURE_TRACKS, FPS, FRAME_H, FRAME_W, fixture_tracks
-from app.models.types import FrameHit, PriceMention, RankedCandidate, Track
-from app.pipeline.keyframes import ranked_frames
+from app.models.types import FrameHit, PriceLink, PriceMention, RankedCandidate, Track
+from app.pipeline.keyframes import make_contact_sheet, ranked_frames
 from app.pipeline.overlay import box_at
-from app.pipeline.associate import (associate, candidates_for, is_identifiable, mention_window, merge_tracks,
+from app.pipeline.associate import (MentionDecision, TrackDecision, apply_price_links, associate, candidates_for, is_identifiable, mention_window, merge_tracks,
                                     name_similarity)
 
 NAMES = {tid: name for tid, _b, name, *_ in FIXTURE_TRACKS}
@@ -132,3 +132,52 @@ def test_merge_keeps_touching_items_from_the_same_prompt():
     a = Track("p0o3", "x", [FrameHit(i, i / 2, box) for i in range(10)])
     b = Track("p0o4", "x", [FrameHit(i, i / 2, box) for i in range(10)])
     assert merge_tracks([a, b]) == ([a, b], {})
+
+
+def _links_setup():
+    mentions = [PriceMention("300", 30000, 0.0, 9.0), PriceMention("200", 20000, 0.0, 9.0)]
+    tracks = {"a": TrackDecision("a", "no_price"), "b": TrackDecision("b", "no_price")}
+    decisions = [MentionDecision(0, []), MentionDecision(1, [])]
+    return decisions, tracks, mentions
+
+
+def test_confident_link_uses_the_spoken_amount():
+    decisions, tracks, mentions = _links_setup()
+    apply_price_links(decisions, tracks, mentions, [PriceLink(0, ["a"], 0.9, "sounds alike")])
+    assert tracks["a"].match_status == "auto" and tracks["a"].price_pesewas == 30000
+    assert "Muse Spark" in tracks["a"].note and decisions[0].auto_track_ids == ["a"]
+
+
+def test_uncertain_link_goes_to_the_seller():
+    decisions, tracks, mentions = _links_setup()
+    apply_price_links(decisions, tracks, mentions, [PriceLink(0, ["a"], 0.5, "maybe")])
+    assert tracks["a"].match_status == "no_price" and tracks["a"].price_pesewas is None
+    assert tracks["a"].suggested == [0]
+
+
+def test_conflicting_links_go_to_the_seller():
+    decisions, tracks, mentions = _links_setup()
+    links = [PriceLink(0, ["a"], 0.9), PriceLink(1, ["a"], 0.9)]
+    apply_price_links(decisions, tracks, mentions, links)
+    assert tracks["a"].match_status == "needs_seller" and tracks["a"].price_pesewas is None
+
+
+def test_link_disagreeing_with_a_clear_match_goes_to_the_seller():
+    decisions, tracks, mentions = _links_setup()
+    tracks["a"] = TrackDecision("a", "auto", 20000, 0.9, 1)
+    apply_price_links(decisions, tracks, mentions, [PriceLink(0, ["a"], 0.95)])
+    assert tracks["a"].match_status == "needs_seller"
+
+
+def test_one_price_can_cover_several_items():
+    decisions, tracks, mentions = _links_setup()
+    apply_price_links(decisions, tracks, mentions, [PriceLink(0, ["a", "b"], 0.9)])
+    assert tracks["a"].price_pesewas == tracks["b"].price_pesewas == 30000
+
+
+def test_contact_sheet_numbers_every_product(tmp_path):
+    img = tmp_path / "p.jpg"
+    Image.new("RGB", (120, 80), "red").save(img)
+    out = make_contact_sheet([(1, img), (2, img), (3, img), (4, img), (5, img)], tmp_path / "sheet.jpg")
+    with Image.open(out) as s:
+        assert s.size == (1200, 600)

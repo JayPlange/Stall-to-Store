@@ -1,7 +1,7 @@
 """Stage 4 keyframes and stage 7 cutouts. Real pixels only; no generative edits here."""
 from pathlib import Path
 
-from PIL import Image, ImageFilter, ImageStat
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageStat
 
 from app.models.types import FrameHit, Track
 
@@ -82,6 +82,26 @@ def save_keyframe(track: Track, frame_path_for, out_dir: Path) -> Path | None:
     with Image.open(frame_path_for(hit.frame_idx)) as img:
         img.crop(_crop_box(hit, *img.size)).convert("RGB").save(out, quality=90)
     return out
+
+
+def make_contact_sheet(items: list[tuple[int, Path]], out_path: Path, columns: int = 4, tile: int = 300) -> Path:
+    """Numbered product tiles for Muse Spark. The numbers are how it refers to products."""
+    rows = (len(items) + columns - 1) // columns
+    sheet = Image.new("RGB", (columns * tile, rows * tile), "white")
+    draw = ImageDraw.Draw(sheet)
+    font = ImageFont.load_default(size=30)
+    for i, (number, path) in enumerate(items):
+        x, y = (i % columns) * tile, (i // columns) * tile
+        with Image.open(path) as img:
+            photo = img.convert("RGB")
+        photo.thumbnail((tile - 20, tile - 20))
+        sheet.paste(photo, (x + (tile - photo.width) // 2, y + (tile - photo.height) // 2))
+        draw.rectangle((x, y, x + 46, y + 42), fill=(10, 63, 44))
+        draw.text((x + 10, y + 4), str(number), font=font, fill="white")
+        draw.rectangle((x, y, x + tile - 1, y + tile - 1), outline=(200, 200, 200))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    sheet.save(out_path, quality=90)
+    return out_path
 
 
 def make_cutout(frame_path: Path, mask_path: Path, mask_box, out_path: Path) -> Path:

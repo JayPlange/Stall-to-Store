@@ -9,7 +9,7 @@ from app.artefacts import new_run_id
 from app.models import transcribe, vision
 from app.models.pricing import spark_cost
 from app.models.base import AdapterNotVerified, CallContext, LiveCallsDisabled, MetaClient, ProviderError, sanitise
-from app.models.types import Crop, Transcript, Unit
+from app.models.types import Crop, PriceMention, Transcript, Unit
 
 FAKE_KEY = "test-key-not-real-0123456789"
 
@@ -137,3 +137,19 @@ def test_sanitise_keeps_usage_but_redacts_credentials():
     creds = {"Authorization": "x", "api_key": "x", "x-api-key": "x", "access_token": "x", "refresh_token": "x",
              "client_secret": "x", "password": "x", "token": "x", "session_token": "x"}
     assert all(v == "<redacted>" for v in sanitise(creds).values())
+
+
+def test_match_prices_cannot_invent_prices_or_products(settings, conn, tmp_path):
+    sheet = tmp_path / "s.jpg"
+    sheet.write_bytes(b"\xff\xd8x")
+    mentions = [PriceMention("300 Ghana cedis", 30000, 0.0, 9.0, "Allianz kettle"),
+                PriceMention("80 Ghana cedis", 8000, 0.0, 9.0, "cremila")]
+    products = [{"number": 1, "track_id": "p0o2", "label": "AILYONS Water Kettle"}]
+    body = _chat_body({"links": [
+        {"price_index": 0, "product_numbers": [1, 99], "confidence": 0.9, "reason": "sounds alike", "amount": 1},
+        {"price_index": 7, "product_numbers": [1], "confidence": 0.9, "reason": "no such price"}]})
+    rec = Recorder([httpx.Response(200, json=body)])
+    links = vision.match_prices(MetaClient(live(settings), conn, httpx.MockTransport(rec)), CallContext(None, "link"),
+                                sheet, "the kettle", mentions, products, "muse-spark-1.3")
+    assert len(rec.requests) == 1 and [l.track_ids for l in links] == [["p0o2"], []]
+    assert links[1].confidence is None and not hasattr(links[0], "amount")

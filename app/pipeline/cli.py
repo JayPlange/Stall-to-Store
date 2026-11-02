@@ -6,6 +6,7 @@
     python -m app.pipeline.cli track      <run_id> --live
     python -m app.pipeline.cli keyframes  <run_id>
     python -m app.pipeline.cli identify   <run_id> --live
+    python -m app.pipeline.cli link       <run_id> --live   # optional Muse Spark price matching
     python -m app.pipeline.cli associate  <run_id>
     python -m app.pipeline.cli cutouts    <run_id>
     python -m app.pipeline.cli overlay    <run_id>
@@ -28,14 +29,15 @@ from app.db import connect, init_db
 from app.logging_setup import configure_logging
 from app.models import segment, transcribe, vision
 from app.models.base import AdapterNotVerified, CallContext, LiveCallsDisabled, MetaClient, ProviderError
-from app.models.types import Crop, PriceMention, Track, Transcript
-from app.pipeline.associate import associate, is_identifiable, merge_tracks
+from app.models.types import Crop, PriceLink, PriceMention, Track, Transcript
+from app.pipeline.associate import apply_price_links, associate, is_identifiable, merge_tracks
 from app.pipeline import overlay as overlay_stage
 from app.pipeline.ingest import ingest
-from app.pipeline.keyframes import PHOTO_CANDIDATES, make_cutout, mask_fill, ranked_frames, save_keyframe
+from app.pipeline.keyframes import (PHOTO_CANDIDATES, make_contact_sheet, make_cutout, mask_fill, ranked_frames,
+                                    save_keyframe)
 from app.pipeline.prices_regex import regex_mentions
 
-LIVE_STAGES = {"transcribe", "track", "identify"}
+LIVE_STAGES = {"transcribe", "track", "identify", "link"}
 
 
 def _read(path: Path):
@@ -53,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging()
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=["ingest", "transcribe", "prices", "track", "keyframes", "identify", "associate",
-                                      "cutouts", "overlay"])
+                                      "cutouts", "overlay", "link"])
     ap.add_argument("run_id")
     ap.add_argument("--live", action="store_true", help="allow this stage to make a paid model call")
     ap.add_argument("--regex", action="store_true", help="prices: use the regex fallback, no model call")
@@ -128,6 +130,9 @@ def main(argv: list[str] | None = None) -> int:
                                                    guesses.get(t.track_id, {}).get("size"), kfs.get(t.track_id),
                                                    guesses.get(t.track_id, {}).get("confidence"))
                          for t in tracks]
+            if (art / "price_links.json").is_file():  # optional: publishing never depends on this step
+                links = [PriceLink(**link) for link in _read(art / "price_links.json")["links"]]
+                apply_price_links(decisions, per_track, mentions, links)
             _write(art / "association.json", {"mentions": [asdict(d) for d in decisions],
                                               "tracks": {k: asdict(v) for k, v in per_track.items()},
                                               "filtered_tracks": filtered})
@@ -165,6 +170,22 @@ def main(argv: list[str] | None = None) -> int:
                 conn.execute("UPDATE products SET cutout_path = ? WHERE id = ?", (made[t.track_id], p["id"]))
             conn.commit()
             _write(art / "cutouts.json", made)
+        elif args.stage == "link":
+            kfs = _read(art / "keyframes.json")
+            products, tiles = [], []
+            for g in _read(art / "guesses.json"):
+                tid, path = g["track_id"], kfs.get(g["track_id"])
+                if path and is_identifiable(g.get("brand"), g.get("name"), g.get("confidence")):
+                    number = len(products) + 1
+                    cutout = rdir / "cutouts" / f"{tid}.jpg"
+                    label = " ".join(x for x in (g.get("brand"), g.get("name"), g.get("size")) if x)
+                    products.append({"number": number, "track_id": tid, "label": label})
+                    tiles.append((number, cutout if cutout.is_file() else s.runs_dir / path))
+            sheet = make_contact_sheet(tiles, art / "contact_sheet.jpg")
+            pm = _read(art / "price_mentions.json")
+            links = vision.match_prices(client, ctx, sheet, Transcript.from_dict(_read(art / "transcript.json")).text,
+                                        [PriceMention(**m) for m in pm["mentions"]], products, s.vision_model)
+            _write(art / "price_links.json", {"products": products, "links": [asdict(x) for x in links]})
         elif args.stage == "overlay":
             meta = _read(rdir / "metadata.json")
             filtered = set(_read(art / "association.json").get("filtered_tracks", []))

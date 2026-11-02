@@ -12,7 +12,7 @@ from pathlib import Path
 
 from app.models.base import AdapterNotVerified, CallContext, MetaClient
 from app.models.pricing import spark_cost
-from app.models.types import Crop, PriceMention, ProductGuess, Transcript
+from app.models.types import Crop, PriceLink, PriceMention, ProductGuess, Transcript
 from app.money import PriceError, parse_cedis
 
 MAX_IMAGES_PER_CALL = 8
@@ -39,6 +39,18 @@ PRICES_SCHEMA = {
                        "referent": {"type": ["string", "null"]}},
         "required": ["unit_start", "unit_end", "quote", "amount_cedis", "referent"]}}},
     "required": ["mentions"],
+}
+
+
+LINKS_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"links": {"type": "array", "items": {
+        "type": "object", "additionalProperties": False,
+        "properties": {"price_index": {"type": "integer"}, "product_numbers": {"type": "array", "items": {"type": "integer"}},
+                       "confidence": {"type": "number"}, "reason": {"type": "string"}},
+        "required": ["price_index", "product_numbers", "confidence", "reason"]}}},
+    "required": ["links"],
 }
 
 
@@ -116,5 +128,33 @@ def parse_prices(client: MetaClient, ctx: CallContext, transcript: Transcript, m
     return mentions
 
 
-def rank_candidates(*_args, **_kwargs):
-    raise AdapterNotVerified("Step 2 contact-sheet ranking is P2 and not implemented yet")
+def match_prices(client: MetaClient, ctx: CallContext, sheet_path: Path, transcript_text: str,
+                 mentions: list[PriceMention], products: list[dict], model: str) -> list[PriceLink]:
+    """Step 2: link each spoken price to products on a numbered contact sheet.
+
+    products: [{"number", "track_id", "label"}]. The model only chooses numbers; amounts always come from the
+    mentions, so it cannot introduce or change a price. Unknown mentions and numbers are discarded.
+    """
+    listed = "\n".join(f"{p['number']}: {p['label'] or 'unreadable label'}" for p in products)
+    spoken = "\n".join(f"[{i}] \"{m.text}\" for: {m.referent or 'not stated'}" for i, m in enumerate(mentions))
+    prompt = ("This image shows numbered products from a market stall in Ghana, cut out of the seller's video.\n"
+              f"Products as read from their labels:\n{listed}\n\n"
+              f"What the seller said:\n{transcript_text}\n\nPrices the seller stated:\n{spoken}\n\n"
+              "For each price, give the numbers of the products it belongs to. Speech recognition mishears brand "
+              "names, so compare how names sound and what the product is, and look at the images. One price can "
+              "apply to several numbered items when they are the same product. Use an empty list when no product "
+              "shown matches. confidence is 0 to 1. Do not change any amount.")
+    content = [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": _data_url(sheet_path)}}]
+    body = {"model": model, "messages": [{"role": "user", "content": content}],
+            "response_format": _response_format("price_links", LINKS_SCHEMA)}
+    result = client.request(ctx, model, "POST", "/chat/completions", json_body=body,
+                            estimate_cost=lambda b: spark_cost(model, b.get("usage") if isinstance(b, dict) else None))
+    parsed = _structured_content(result.body)
+    by_number = {p["number"]: p["track_id"] for p in products}
+    links = {i: PriceLink(i, [], None) for i in range(len(mentions))}
+    for item in parsed.get("links", []):
+        i = item.get("price_index") if isinstance(item, dict) else None
+        if i in links:
+            ids = [by_number[n] for n in item.get("product_numbers", []) if n in by_number]
+            links[i] = PriceLink(i, list(dict.fromkeys(ids)), item.get("confidence"), item.get("reason"))
+    return list(links.values())

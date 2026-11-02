@@ -107,6 +107,15 @@ class RankedCandidate:
 
 
 @dataclass
+class PriceLink:
+    """Muse Spark's view of which products one spoken price belongs to. A proposal, never a final price."""
+    mention_index: int
+    track_ids: list[str]
+    confidence: float | None
+    reason: str | None = None
+
+
+@dataclass
 class Msg:
     role: Literal["system", "user", "assistant", "tool"]
     content: str

@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
-from app.models.types import Candidate, Granularity, PriceMention, RankedCandidate, Track
+from app.models.types import Candidate, Granularity, PriceLink, PriceMention, RankedCandidate, Track
 
 WORD_PRE_S = 1.5
 WORD_POST_S = 1.0
@@ -28,6 +28,7 @@ GENERIC_PRODUCT_WORDS = {"water", "kettle", "baby", "wipe", "wipes", "milk", "po
                          "fabric", "conditioner", "softener", "softeners", "washing", "multi", "purpose",
                          "scourer", "scorer", "cream", "lotion", "oil"}
 MIN_ID_CONFIDENCE = 0.3
+LINK_AUTO_CONFIDENCE = 0.8  # placeholder: tune on tuning videos only
 # Merging SAM prompts: one request per noun phrase can find the same object twice.
 MIN_TRACK_HITS = 5
 DUPLICATE_OVERLAP = 0.6
@@ -112,6 +113,42 @@ def merge_tracks(tracks: list[Track]) -> tuple[list[Track], dict[str, str]]:
         else:
             kept.append(track)
     return kept, dropped
+
+
+def apply_price_links(decisions: list[MentionDecision], tracks: dict[str, TrackDecision],
+                      mentions: list[PriceMention], links: list[PriceLink]) -> None:
+    """Fold Muse Spark's proposals into the decisions. Amounts always come from the mentions.
+
+    A confident link auto-matches, still subject to seller approval. Anything uncertain or contradictory goes to
+    the seller, and Publishing never depends on this step.
+    """
+    proposed: dict[str, list[tuple[int, PriceLink]]] = {}
+    for link in links:
+        if link.confidence is not None and link.confidence >= LINK_AUTO_CONFIDENCE:
+            for tid in link.track_ids:
+                proposed.setdefault(tid, []).append((link.mention_index, link))
+        else:
+            for tid in link.track_ids:
+                if tid in tracks and link.mention_index not in tracks[tid].suggested:
+                    tracks[tid].suggested.append(link.mention_index)
+    for tid, items in proposed.items():
+        td = tracks.get(tid)
+        if td is None:
+            continue
+        amounts = {mentions[i].amount_pesewas for i, _ in items}
+        if td.match_status == "auto":
+            amounts.add(td.price_pesewas)
+        if len(amounts) > 1:
+            td.match_status, td.price_pesewas, td.confidence = "needs_seller", None, None
+            td.note = "Different prices were linked to this product: please check"
+            td.suggested.extend(i for i, _ in items if i not in td.suggested)
+            continue
+        index, link = items[-1]
+        td.match_status, td.price_pesewas, td.confidence = "auto", mentions[index].amount_pesewas, link.confidence
+        td.mention_index = index
+        td.note = f"Matched by Muse Spark: {link.reason}" if link.reason else "Matched by Muse Spark"
+    for d in decisions:
+        d.auto_track_ids = [tid for tid, td in tracks.items() if td.match_status == "auto" and td.mention_index == d.mention_index]
 
 
 def is_identifiable(brand: str | None, name: str | None, confidence: float | None) -> bool:

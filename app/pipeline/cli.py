@@ -88,11 +88,7 @@ def main(argv: list[str] | None = None) -> int:
             meta = _read(rdir / "metadata.json")
             prompts = [p.strip() for p in args.prompts.split(";") if p.strip()]
             tracks, diags = segment.track(client, ctx, rdir / meta["normalised"], prompts, s.segment_model,
-                                          meta["frame_fps"], meta["frame_count"], rdir / "artefacts" / "masks")
-            for t in tracks:
-                for h in t.frames:
-                    if h.mask_path:
-                        h.mask_path = relative_to_runs(s.runs_dir, Path(h.mask_path))
+                                          meta["frame_fps"], meta["frame_count"], art)
             _write(art / "tracks.json", {"prompts": prompts, "diagnostics": diags,
                                          "tracks": [asdict(t) for t in tracks]})
         elif args.stage == "keyframes":
@@ -129,15 +125,20 @@ def main(argv: list[str] | None = None) -> int:
         elif args.stage == "cutouts":
             tracks = {t["track_id"]: Track.from_dict(t) for t in _read(art / "tracks.json")["tracks"]}
             frames = {f["frame_idx"]: rdir / "frames" / f["file"] for f in _read(rdir / "frames.json")["frames"]}
-            made = {}
+            made, outputs = {}, {}
             for p in catalogue.list_products(conn, args.run_id):
                 t = tracks.get(p["track_id"])
                 best = best_frame(t, lambda i: frames.get(i, Path("missing"))) if t else None
                 hit = best[0] if best else None
-                if not hit or not hit.mask_path or not hit.mask_box:
+                prompt_index, _, obj = t.track_id[1:].partition("o") if t else ("", "", "")
+                if hit and prompt_index not in outputs:
+                    outputs[prompt_index] = segment.index_masks(
+                        (art / f"sam_output_p{prompt_index}.txt").read_text(encoding="utf-8"))
+                mask = outputs[prompt_index].get((obj, hit.frame_idx)) if hit else None
+                if mask is None or not hit.mask_box:
                     continue
-                out = make_cutout(frames[hit.frame_idx], s.runs_dir / hit.mask_path, hit.mask_box,
-                                  rdir / "cutouts" / f"{t.track_id}.jpg")
+                mask_png = segment.save_mask(mask, art / "masks" / f"{t.track_id}_{hit.frame_idx:05d}.png")
+                out = make_cutout(frames[hit.frame_idx], mask_png, hit.mask_box, rdir / "cutouts" / f"{t.track_id}.jpg")
                 made[t.track_id] = relative_to_runs(s.runs_dir, out)
                 conn.execute("UPDATE products SET cutout_path = ? WHERE id = ?", (made[t.track_id], p["id"]))
             conn.commit()

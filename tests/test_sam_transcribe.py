@@ -40,21 +40,42 @@ def live(settings):
     return settings.model_copy(update={"allow_live_model_calls": True, "model_api_key": SecretStr("k-test-123")})
 
 
-def test_parse_tracks_groups_by_stable_object_id(tmp_path):
-    tracks, diags = segment.parse_tracks(SAM_TEXT, 2.0, "bottle", 0, tmp_path / "masks")
+def test_parse_tracks_groups_by_stable_object_id():
+    tracks, diags = segment.parse_tracks(SAM_TEXT, 2.0, "bottle", 0)
     by_id = {t.track_id: t for t in tracks}
     assert set(by_id) == {"p0o3", "p0o7"}
     hits = by_id["p0o3"].frames
     assert [h.frame_idx for h in hits] == [0, 1, 4] and [h.t for h in hits] == [0.0, 0.5, 2.0]
     # meta-sam-parser reports half-open pixel bounds: wire x2=50 -> right=51.
     assert hits[0].box_xyxy == (10, 20, 51, 61) and hits[0].score == 0.9 and hits[1].score is None
-    with Image.open(hits[0].mask_path) as m:
-        assert m.size == (W, H) and m.convert("L").getpixel((1, 0)) == 255
+    assert hits[0].mask_box == (10, 20, 51, 61) and hits[0].mask_path is None
     assert diags  # the garbage line is reported, not silently dropped
 
 
+def test_parsing_never_decodes_real_masks(monkeypatch):
+    calls = []
+    monkeypatch.setattr(segment, "decode_mask_to_raster", lambda m: calls.append(m))
+    assert segment.parse_tracks(SAM_TEXT, 2.0, "bottle", 0)[0]
+    assert segment.index_masks(SAM_TEXT) and calls == []
+
+
+def test_mask_placeholder_is_valid():
+    mask = segment.SegmentationMask("one_bit", segment.MASK_PLACEHOLDER, 1, 1)
+    assert list(segment.decode_mask_to_raster(mask)) == [0]
+
+
+def test_index_and_save_one_mask(tmp_path):
+    masks = segment.index_masks(SAM_TEXT)
+    assert set(masks) == {("3", 0), ("7", 0), ("3", 1), ("3", 4)}
+    out = segment.save_mask(masks["3", 0], tmp_path / "m" / "a.png")
+    with Image.open(out) as m:
+        assert m.size == (W, H)
+        pixels = [m.convert("L").getpixel((x, y)) for y in range(H) for x in range(W)]
+    assert [p // 255 for p in pixels] == list(RASTER)
+
+
 def test_empty_output_is_zero_tracks():
-    assert segment.parse_tracks("", 2.0, "x", 0, None) == ([], [])
+    assert segment.parse_tracks("", 2.0, "x", 0) == ([], [])
 
 
 def test_extract_output_text_shapes():
@@ -94,6 +115,7 @@ def test_track_one_request_per_prompt_with_cost(settings, conn, tmp_path):
     rows = conn.execute("SELECT stage, cost_usd FROM model_calls ORDER BY id").fetchall()
     assert [r["stage"] for r in rows] == ["track-p0", "track-p1"]
     assert all(r["cost_usd"] == sam_video_cost(50) for r in rows)  # 30 frames billed at the 50 minimum
+    assert (tmp_path / "masks" / "sam_output_p1.txt").read_text(encoding="utf-8") == SAM_TEXT
     raw = (settings.runs_dir / run_id / "raw" / "track-p0.json").read_text()
     assert "base64," not in raw and "k-test-123" not in raw
 

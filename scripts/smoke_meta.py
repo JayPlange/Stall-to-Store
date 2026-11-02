@@ -95,7 +95,7 @@ def main() -> int:
             r = client.request(ctx, model, "POST", "/responses", json_body=body,
                                request_summary={**body, "video": f"{frames} frames at {s.frame_fps} fps"},
                                estimate_cost=lambda _b: sam_video_cost(frames))
-            tracks, diags = parse_tracks(extract_output_text(r.body), s.frame_fps, args.prompt, 0, None)
+            tracks, diags = parse_tracks(extract_output_text(r.body), s.frame_fps, args.prompt, 0)
             entry["sam"] = {"frames_sent": frames, "tracks": len(tracks), "diagnostics": diags[:10],
                             "hits_per_track": {t.track_id: len(t.frames) for t in tracks}}
         cost = conn.execute("SELECT cost_usd FROM model_calls ORDER BY id DESC LIMIT 1").fetchone()[0]

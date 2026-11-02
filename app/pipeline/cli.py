@@ -27,7 +27,7 @@ from app.logging_setup import configure_logging
 from app.models import segment, transcribe, vision
 from app.models.base import AdapterNotVerified, CallContext, LiveCallsDisabled, MetaClient, ProviderError
 from app.models.types import Crop, PriceMention, Track, Transcript
-from app.pipeline.associate import associate
+from app.pipeline.associate import associate, is_identifiable
 from app.pipeline.ingest import ingest
 from app.pipeline.keyframes import best_frame, make_cutout, save_keyframe
 from app.pipeline.prices_regex import regex_mentions
@@ -111,7 +111,12 @@ def main(argv: list[str] | None = None) -> int:
             mentions = [PriceMention(**m) for m in pm["mentions"]]
             guesses = {g["track_id"]: g for g in _read(art / "guesses.json")}
             kfs = _read(art / "keyframes.json")
-            names = {tid: (g.get("name") or None) for tid, g in guesses.items()}
+            filtered = [t.track_id for t in tracks if t.track_id in guesses and not is_identifiable(
+                guesses[t.track_id].get("brand"), guesses[t.track_id].get("name"),
+                guesses[t.track_id].get("confidence"))]
+            tracks = [t for t in tracks if t.track_id not in filtered]
+            names = {tid: " ".join(x for x in (g.get("brand"), g.get("name")) if x) or None
+                     for tid, g in guesses.items()}
             decisions, per_track = associate(mentions, tracks, pm["granularity"], meta["frame_fps"],
                                              meta["frame_width"], meta["frame_height"], names)
             proposals = [catalogue.ProductProposal(t.track_id, guesses.get(t.track_id, {}).get("brand"),
@@ -120,7 +125,8 @@ def main(argv: list[str] | None = None) -> int:
                                                    guesses.get(t.track_id, {}).get("confidence"))
                          for t in tracks]
             _write(art / "association.json", {"mentions": [asdict(d) for d in decisions],
-                                              "tracks": {k: asdict(v) for k, v in per_track.items()}})
+                                              "tracks": {k: asdict(v) for k, v in per_track.items()},
+                                              "filtered_tracks": filtered})
             catalogue.store_draft(conn, args.run_id, proposals, mentions, decisions, per_track)
         elif args.stage == "cutouts":
             tracks = {t["track_id"]: Track.from_dict(t) for t in _read(art / "tracks.json")["tracks"]}

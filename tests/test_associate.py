@@ -1,6 +1,6 @@
 from app.fixtures import FIXTURE_MENTIONS, FIXTURE_TRACKS, FPS, FRAME_H, FRAME_W, fixture_tracks
 from app.models.types import FrameHit, PriceMention, RankedCandidate, Track
-from app.pipeline.associate import associate, candidates_for, mention_window
+from app.pipeline.associate import associate, candidates_for, is_identifiable, mention_window, name_similarity
 
 NAMES = {tid: name for tid, _b, name, *_ in FIXTURE_TRACKS}
 
@@ -65,3 +65,27 @@ def test_referent_name_bonus():
 def test_track_not_visible_is_not_a_candidate():
     a = _track("a", 10, 12, (0, 0, 100, 100))
     assert candidates_for(PriceMention("x", 100, 1.0, 2.0), [a], "word", 2.0, 1280, 720, {}) == []
+
+
+def test_filler_words_cannot_match():
+    # Real failure: "the" in the Vim narration scored 1.0 against "The Earl Grey".
+    assert name_similarity("vim scorer the vim multi-purpose scorer", "TWININGS The Earl Grey Our Classic Blend") < 0.6
+
+
+def test_generic_words_cannot_match_alone():
+    assert name_similarity("Bel Aqua premium mineral water", "AILYONS Water Kettle") < 0.6
+    assert name_similarity("the kettle", "AILYONS Water Kettle") == 0.0
+
+
+def test_misheard_and_split_brands_still_match():
+    assert name_similarity("cremila milk powder", "Kremela Non-Dairy Creamer") >= 0.6
+    assert name_similarity("soft care baby wipes", "Softcare Baby Wipes") == 1.0
+    assert name_similarity("twinnings Earl Grey", "TWININGS The Earl Grey") >= 0.9
+
+
+def test_only_empty_low_confidence_tracks_are_filtered():
+    assert not is_identifiable(None, None, 0.1)
+    assert is_identifiable("Comfort", None, 0.4)
+    assert is_identifiable(None, "Baby Wipes", 0.1)
+    assert is_identifiable(None, None, 0.8)      # unreadable real product: seller still sees it
+    assert is_identifiable(None, None, None)     # no evidence either way: never drop silently

@@ -18,6 +18,16 @@ AUTO_MIN_SCORE = 0.35
 NAME_MATCH_RATIO = 0.6
 NAME_BONUS = 0.3
 PLURAL_REFERENTS = {"these", "those", "them", "ones", "all", "each", "both"}
+# Words that say nothing about which product is meant.
+FILLER_WORDS = {"the", "and", "for", "with", "this", "that", "here", "there", "have", "has", "which", "goes",
+                "you", "know", "mean", "also", "over", "our", "from", "are", "was", "one"}
+# Category words shared across brands: "water" must not link Bel-Aqua to a "Water Kettle". They can't prove a
+# match alone, so a name match needs a brand-like word. Reviewed on tuning videos only, like the thresholds.
+GENERIC_PRODUCT_WORDS = {"water", "kettle", "baby", "wipe", "wipes", "milk", "powder", "tea", "soap", "mineral",
+                         "premium", "still", "classic", "blend", "concentrated", "dairy", "non", "creamer",
+                         "fabric", "conditioner", "softener", "softeners", "washing", "multi", "purpose",
+                         "scourer", "scorer", "cream", "lotion", "oil"}
+MIN_ID_CONFIDENCE = 0.3
 
 
 @dataclass
@@ -51,17 +61,24 @@ def _tokens(text: str | None) -> list[str]:
     return re.findall(r"[a-z0-9]+", (text or "").lower())
 
 
+def _distinctive(text: str | None) -> list[str]:
+    ignored = PLURAL_REFERENTS | FILLER_WORDS | GENERIC_PRODUCT_WORDS
+    return [t for t in _tokens(text) if len(t) >= 3 and t not in ignored]
+
+
 def name_similarity(referent: str | None, name: str | None) -> float:
-    ref, nm = _tokens(referent), _tokens(name)
+    """Best fuzzy match between brand-like words. Filler and category words never count."""
+    ref, nm = _distinctive(referent), _distinctive(name)
     if not ref or not nm:
         return 0.0
-    best = 0.0
-    for r in ref:
-        if len(r) < 3 or r in PLURAL_REFERENTS:
-            continue
-        for n in nm:
-            best = max(best, SequenceMatcher(None, r, n).ratio())
-    return best
+    # Speech splits brand names ("soft care" for "Softcare"), so try adjacent words joined too.
+    spoken = ref + [a + b for a, b in zip(ref, ref[1:])]
+    return max(SequenceMatcher(None, r, n).ratio() for r in spoken for n in nm)
+
+
+def is_identifiable(brand: str | None, name: str | None, confidence: float | None) -> bool:
+    """False only when the model read nothing and is confident there is nothing to read (e.g. floor tile)."""
+    return bool(brand or name) or confidence is None or confidence >= MIN_ID_CONFIDENCE
 
 
 def score_track(track: Track, window: tuple[float, float], fps: float, frame_w: int, frame_h: int,

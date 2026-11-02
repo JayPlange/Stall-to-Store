@@ -137,6 +137,7 @@ def _review_ctx(conn, request: Request, run: dict, error: str | None = None, not
     counts = {k: sum(1 for p in products if p["status"] == k) for k in ("draft", "approved", "hidden")}
     return {"run": run, "products": products, "shop": shop, "metadata": metadata, "counts": counts,
             "story": _run_story(s, run, metadata),
+            "has_tracking_video": (run_dir(s.runs_dir, run["id"]) / "artefacts" / "tracking.mp4").is_file(),
             "cards": [_card_ctx(conn, run, p) for p in products], "error": error, "notice": notice,
             "orders": orders.list_orders(conn, shop["id"]) if shop else []}
 
@@ -220,6 +221,15 @@ def order_action(request: Request, token: str, reference: str, action: str,
     except orders.OrderError as exc:
         return _review_response(request, conn, run, error=str(exc), status_code=400)
     return _review_response(request, conn, run, notice=notice)
+
+
+@router.get("/r/{token}/tracking.mp4")
+def tracking_video(request: Request, token: str, conn: sqlite3.Connection = Depends(conn_dep)):
+    run = _run_or_404(conn, token)
+    path = run_dir(settings_of(request).runs_dir, run["id"]) / "artefacts" / "tracking.mp4"
+    if not path.is_file():
+        raise HTTPException(404, "Not found")
+    return FileResponse(path, media_type="video/mp4")
 
 
 @router.get("/r/{token}/img/{product_id}")

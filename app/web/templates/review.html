@@ -13,6 +13,10 @@
 {% if story %}
 <div class="section-head"><h2>What the AI found in your video</h2>
   {% if metadata %}<p>From your {{ '%.0f'|format(metadata.duration_s) }} second video.</p>{% endif %}</div>
+{% if has_tracking_video %}
+<video class="tracking" controls playsinline preload="metadata" src="/r/{{ run.review_token }}/tracking.mp4"></video>
+<p class="hint" style="margin:6px 0 12px">Coloured shapes are SAM 3.1's real tracking on your footage.</p>
+{% endif %}
 <section class="story">
   {% for s in story %}
   <div class="story-card"><span class="model">{{ s.model }}</span><p class="stat">{{ s.stat }}</p><p>{{ s.job }}</p></div>

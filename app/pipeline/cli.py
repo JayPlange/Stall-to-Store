@@ -8,6 +8,7 @@
     python -m app.pipeline.cli identify   <run_id> --live
     python -m app.pipeline.cli associate  <run_id>
     python -m app.pipeline.cli cutouts    <run_id>
+    python -m app.pipeline.cli overlay    <run_id>
 
 Artefacts in runs/{run_id}/artefacts/: transcript.json, price_mentions.json, tracks.json,
 keyframes.json, guesses.json, association.json, cutouts.json. Each stage can be re-run alone.
@@ -29,6 +30,7 @@ from app.models import segment, transcribe, vision
 from app.models.base import AdapterNotVerified, CallContext, LiveCallsDisabled, MetaClient, ProviderError
 from app.models.types import Crop, PriceMention, Track, Transcript
 from app.pipeline.associate import associate, is_identifiable
+from app.pipeline import overlay as overlay_stage
 from app.pipeline.ingest import ingest
 from app.pipeline.keyframes import PHOTO_CANDIDATES, make_cutout, mask_fill, ranked_frames, save_keyframe
 from app.pipeline.prices_regex import regex_mentions
@@ -51,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging()
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=["ingest", "transcribe", "prices", "track", "keyframes", "identify", "associate",
-                                      "cutouts"])
+                                      "cutouts", "overlay"])
     ap.add_argument("run_id")
     ap.add_argument("--live", action="store_true", help="allow this stage to make a paid model call")
     ap.add_argument("--regex", action="store_true", help="prices: use the regex fallback, no model call")
@@ -162,6 +164,28 @@ def main(argv: list[str] | None = None) -> int:
                 conn.execute("UPDATE products SET cutout_path = ? WHERE id = ?", (made[t.track_id], p["id"]))
             conn.commit()
             _write(art / "cutouts.json", made)
+        elif args.stage == "overlay":
+            meta = _read(rdir / "metadata.json")
+            filtered = set(_read(art / "association.json").get("filtered_tracks", []))
+            tracks = [t for t in map(Track.from_dict, _read(art / "tracks.json")["tracks"])
+                      if t.track_id not in filtered]
+            labels = {g["track_id"]: g.get("brand") or g.get("name") or "product" for g in _read(art / "guesses.json")}
+            outputs = {}
+
+            def mask_png(track_id: str, frame_idx: int) -> Path | None:
+                png = art / "masks" / f"{track_id}_{frame_idx:05d}.png"
+                if png.is_file():
+                    return png
+                prompt_index, _, obj = track_id[1:].partition("o")
+                if prompt_index not in outputs:
+                    outputs[prompt_index] = segment.index_masks(
+                        (art / f"sam_output_p{prompt_index}.txt").read_text(encoding="utf-8"))
+                mask = outputs[prompt_index].get((obj, frame_idx))
+                return segment.save_mask(mask, png) if mask is not None else None
+
+            overlay_stage.render(s.runs_dir / run["video_path"], tracks, labels, mask_png, art / "tracking.mp4",
+                                 (meta["frame_width"], meta["frame_height"]), s.ffmpeg_bin)
+            print("wrote tracking.mp4")
         catalogue.set_run_status(conn, args.run_id, catalogue.get_run(conn, args.run_id)["status"], args.stage)
     except (LiveCallsDisabled, AdapterNotVerified) as exc:
         print(f"{args.stage}: {exc}", file=sys.stderr)

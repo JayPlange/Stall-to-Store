@@ -3,6 +3,7 @@ from PIL import Image
 from app.fixtures import FIXTURE_MENTIONS, FIXTURE_TRACKS, FPS, FRAME_H, FRAME_W, fixture_tracks
 from app.models.types import FrameHit, PriceMention, RankedCandidate, Track
 from app.pipeline.keyframes import ranked_frames
+from app.pipeline.overlay import box_at
 from app.pipeline.associate import associate, candidates_for, is_identifiable, mention_window, name_similarity
 
 NAMES = {tid: name for tid, _b, name, *_ in FIXTURE_TRACKS}
@@ -102,3 +103,13 @@ def test_photo_frame_avoids_obstruction_and_edges(tmp_path):
     ranked = ranked_frames(track, lambda i: img, {0: [(50, 50, 120, 150)]})
     assert [h.frame_idx for h, _ in ranked][0] == 1           # clear view wins over a covered one
     assert ranked[-1][0].frame_idx in (0, 2)                  # covered or edge-touching ranks last
+
+
+def test_overlay_only_draws_where_sam_detected():
+    hits = [FrameHit(0, 0.0, (0, 0, 10, 10)), FrameHit(1, 0.5, (10, 0, 20, 10)), FrameHit(20, 10.0, (50, 0, 60, 10))]
+    track = Track("a", "a", hits)
+    box, nearest = box_at(track, 0.25)
+    assert box == (5.0, 0.0, 15.0, 10.0) and nearest.frame_idx in (0, 1)  # glides across a short gap
+    assert box_at(track, 5.0) is None                                      # object gone: nothing invented
+    assert box_at(track, 10.1)[0] == (50, 0, 60, 10)                       # brief hold around a real hit
+    assert box_at(track, 12.0) is None

@@ -29,7 +29,7 @@ from app.logging_setup import configure_logging
 from app.models import segment, transcribe, vision
 from app.models.base import AdapterNotVerified, CallContext, LiveCallsDisabled, MetaClient, ProviderError
 from app.models.types import Crop, PriceMention, Track, Transcript
-from app.pipeline.associate import associate, is_identifiable
+from app.pipeline.associate import associate, is_identifiable, merge_tracks
 from app.pipeline import overlay as overlay_stage
 from app.pipeline.ingest import ingest
 from app.pipeline.keyframes import PHOTO_CANDIDATES, make_cutout, mask_fill, ranked_frames, save_keyframe
@@ -92,7 +92,8 @@ def main(argv: list[str] | None = None) -> int:
             prompts = [p.strip() for p in args.prompts.split(";") if p.strip()]
             tracks, diags = segment.track(client, ctx, rdir / meta["normalised"], prompts, s.segment_model,
                                           meta["frame_fps"], meta["frame_count"], art)
-            _write(art / "tracks.json", {"prompts": prompts, "diagnostics": diags,
+            tracks, dropped = merge_tracks(tracks)
+            _write(art / "tracks.json", {"prompts": prompts, "diagnostics": diags, "dropped_tracks": dropped,
                                          "tracks": [asdict(t) for t in tracks]})
         elif args.stage == "keyframes":
             tracks = [Track.from_dict(t) for t in _read(art / "tracks.json")["tracks"]]

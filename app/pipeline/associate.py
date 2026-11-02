@@ -28,6 +28,10 @@ GENERIC_PRODUCT_WORDS = {"water", "kettle", "baby", "wipe", "wipes", "milk", "po
                          "fabric", "conditioner", "softener", "softeners", "washing", "multi", "purpose",
                          "scourer", "scorer", "cream", "lotion", "oil"}
 MIN_ID_CONFIDENCE = 0.3
+# Merging SAM prompts: one request per noun phrase can find the same object twice.
+MIN_TRACK_HITS = 5
+DUPLICATE_OVERLAP = 0.6
+MIN_SHARED_FRAMES = 3
 
 
 @dataclass
@@ -74,6 +78,40 @@ def name_similarity(referent: str | None, name: str | None) -> float:
     # Speech splits brand names ("soft care" for "Softcare"), so try adjacent words joined too.
     spoken = ref + [a + b for a, b in zip(ref, ref[1:])]
     return max(SequenceMatcher(None, r, n).ratio() for r in spoken for n in nm)
+
+
+def _inside(a, b) -> float:
+    """Share of box a that lies inside box b."""
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    area = (a[2] - a[0]) * (a[3] - a[1])
+    return max(0, w) * max(0, h) / area if area > 0 else 0.0
+
+
+def _duplicates(track: Track, other: Track) -> bool:
+    boxes = {h.frame_idx: h.box_xyxy for h in other.frames}
+    shared = [(h.box_xyxy, boxes[h.frame_idx]) for h in track.frames if h.frame_idx in boxes]
+    if len(shared) < MIN_SHARED_FRAMES:
+        return False
+    return sum(_inside(a, b) for a, b in shared) / len(shared) >= DUPLICATE_OVERLAP
+
+
+def merge_tracks(tracks: list[Track]) -> tuple[list[Track], dict[str, str]]:
+    """Combine tracks from several prompts, earlier prompts winning. Returns kept tracks and why others left.
+
+    Tracks from the same prompt are never merged: SAM already separated them, so three sachets stay three.
+    """
+    kept, dropped = [], {}
+    for track in tracks:
+        prompt = track.track_id.split("o")[0]
+        twin = next((k for k in kept if k.track_id.split("o")[0] != prompt and _duplicates(track, k)), None)
+        if len(track.frames) < MIN_TRACK_HITS:
+            dropped[track.track_id] = f"only {len(track.frames)} frames"
+        elif twin:
+            dropped[track.track_id] = f"same object as {twin.track_id}"
+        else:
+            kept.append(track)
+    return kept, dropped
 
 
 def is_identifiable(brand: str | None, name: str | None, confidence: float | None) -> bool:

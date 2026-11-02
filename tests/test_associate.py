@@ -4,7 +4,8 @@ from app.fixtures import FIXTURE_MENTIONS, FIXTURE_TRACKS, FPS, FRAME_H, FRAME_W
 from app.models.types import FrameHit, PriceMention, RankedCandidate, Track
 from app.pipeline.keyframes import ranked_frames
 from app.pipeline.overlay import box_at
-from app.pipeline.associate import associate, candidates_for, is_identifiable, mention_window, name_similarity
+from app.pipeline.associate import (associate, candidates_for, is_identifiable, mention_window, merge_tracks,
+                                    name_similarity)
 
 NAMES = {tid: name for tid, _b, name, *_ in FIXTURE_TRACKS}
 
@@ -113,3 +114,21 @@ def test_overlay_only_draws_where_sam_detected():
     assert box_at(track, 5.0) is None                                      # object gone: nothing invented
     assert box_at(track, 10.1)[0] == (50, 0, 60, 10)                       # brief hold around a real hit
     assert box_at(track, 12.0) is None
+
+
+def test_merge_drops_cross_prompt_duplicates_and_tiny_tracks():
+    box = (100, 100, 300, 300)
+    first = Track("p0o1", "x", [FrameHit(i, i / 2, box) for i in range(10)])
+    side = Track("p1o2", "x", [FrameHit(i, i / 2, (150, 150, 250, 250)) for i in range(10)])
+    other = Track("p1o0", "x", [FrameHit(i, i / 2, (400, 100, 500, 300)) for i in range(10)])
+    tiny = Track("p1o3", "x", [FrameHit(i, i / 2, (10, 10, 20, 20)) for i in range(3)])
+    kept, dropped = merge_tracks([first, side, other, tiny])
+    assert [t.track_id for t in kept] == ["p0o1", "p1o0"]
+    assert dropped == {"p1o2": "same object as p0o1", "p1o3": "only 3 frames"}
+
+
+def test_merge_keeps_touching_items_from_the_same_prompt():
+    box = (100, 100, 300, 300)
+    a = Track("p0o3", "x", [FrameHit(i, i / 2, box) for i in range(10)])
+    b = Track("p0o4", "x", [FrameHit(i, i / 2, box) for i in range(10)])
+    assert merge_tracks([a, b]) == ([a, b], {})

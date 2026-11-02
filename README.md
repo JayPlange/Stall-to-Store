@@ -3,9 +3,20 @@
 A market seller films their stall for under a minute while saying prices out loud, and gets back a live
 shop page whose products, photos and prices come from that video, with orders arriving on WhatsApp.
 
-Meta Global AI Developer Hackathon, Indie track. **All code in this repository was written during the
-event, starting 26 October 2026.** Nothing is copied from earlier projects. See [SPEC.md](SPEC.md) for the
-full design and [BUILD_STATUS.md](BUILD_STATUS.md) for what works today versus what is still blocked.
+Meta Global AI Developer Hackathon, Indie track, theme: Build for Your World.
+
+## Built during the event
+
+**Everything in this repository was built during the hackathon, starting after kickoff on 26 October 2026.** Nothing is
+copied from earlier projects, and the commit history shows the work as it happened.
+
+- The video pipeline: ingest, multi-prompt SAM 3.1 tracking, transcription, price extraction, product naming, and
+  Muse Spark price matching
+- Seller review, the shop page, and WhatsApp click-to-chat ordering with price and order safeguards
+- The tracking video, the evaluation script, and the test suite
+
+The only outside code is the open-source libraries in `requirements.txt`, including Meta's `meta-sam-parser`.
+See [SPEC.md](SPEC.md) for the design and [BUILD_STATUS.md](BUILD_STATUS.md) for current results.
 
 ## Run it
 

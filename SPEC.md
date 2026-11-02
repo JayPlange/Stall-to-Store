@@ -18,10 +18,10 @@ A market seller films their stall for under a minute while saying prices out lou
 1. **Real outputs only.** Curated footage, good lighting and seller confirmation are fine. Hand-edited or fabricated results presented as model output are not.
 2. **Every model has a necessary job.** No model is added only to increase the count.
 3. **Nothing reaches the shop page unconfirmed.** Every published price has been approved by the seller on the review screen.
-4. **All new code.** The repository starts on 27 October. Nothing is copied from KasaFlow. The README states what was built during the event.
+4. **All new code.** Development began after kickoff on 26 October. Nothing is copied from KasaFlow. The README states what was built during the event.
 5. **The public repo holds code only.** Footage, API keys and seller details stay out of git.
 6. **Meta API details are unconfirmed.** Section 6 describes our internal interfaces, not real endpoints. Before writing any adapter, prove from Python: authentication, that the endpoint is available to this account, the actual response shape, the usage units billed, and the failure behaviour. No pipeline stage is written against an assumed response.
-7. **API access is the first gate.** The Meta account currently shows a payment-authorisation restriction. A working playground chat does not prove that SAM 3.1 video or transcription calls work from code. Clear the restriction and make one real call to each model before anything else.
+7. **API access is the first gate.** A working playground chat does not prove that SAM 3.1 video or transcription calls work from code. Make one real call to each model before anything else.
 8. **There is no hard spending cap.** The billing control available is an email notification at a threshold, not a guaranteed limit. Make deliberate test calls, log every call's usage, never retry automatically in a loop, and check current billing terms before running a batch.
 9. **Privacy by filming, not by models.** Film products and the seller's hands, not faces. If a face appears, cut that footage from anything published. Segmentation is not a privacy control.
 
@@ -246,7 +246,7 @@ Split: about one third of the videos for tuning, the rest held out. With 3 to 5 
 
 | Day | Date | Goal | Gate (pass or fail) |
 |---|---|---|---|
-| 0 | Mon 26 Oct | Hacking is open from kickoff. Claim credits (forms in #resources), clear the payment-authorisation restriction, set the spend notification, read API docs, create the public repo with this spec. Start filming (products and hands, no faces) and labelling. | Credits claimed, account unrestricted, repo created |
+| 0 | Mon 26 Oct | Hacking is open from kickoff. Claim credits (forms in #resources), set the spend notification, read API docs, create the public repo with this spec. Start filming (products and hands, no faces) and labelling. | Credits claimed, repo created |
 | 1 | Tue 27 Oct | **Prove access, then the riskiest assumption.** One real call to each model from Python; save raw responses; record usage units and failure behaviour. Then one video through SAM, transcription and candidate matching with throwaway scripts. | **G1a:** real outputs accessible and usable from code. **G1b:** detection recall 80% or more, and auto-match precision 90% or more at any coverage → full build; coverage decides how much the seller does. Below 90% precision → seller-assisted matching becomes the plan |
 | 2 | Wed 28 Oct | Pipeline stages 1 to 4 as proper code, artefacts on disk, `model_calls` logging. Agents 102 session at 4pm. | One video processed end to end into tracks and keyframes |
 | 3 | Thu 29 Oct | Stages 5 and 6 (identify, prices, association) and `run_eval.py`. | **G2:** eval runs on 2 videos and prints the table |
@@ -287,7 +287,7 @@ There is no hard cap: the billing control is an email notification. Make deliber
 
 | Risk | Sign | Fallback |
 |---|---|---|
-| API access blocked | Day 1 G1a fails; payment restriction persists | Ask in #office-hours and #questions immediately; nothing else proceeds until one real call works |
+| API access blocked | Day 1 G1a fails; real calls do not work | Ask in #office-hours and #questions immediately; nothing else proceeds until one real call works |
 | Price matching fails | Auto-match precision below 90% | Seller-assisted matching: system proposes candidates, seller confirms each price |
 | SAM video too slow or costly | Day 1 measurements | Track on 1 to 2 fps frames, shorter clips |
 | Spark cannot take video or audio | Day 1 docs check | Frames as images plus transcript text |

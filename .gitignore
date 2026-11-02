@@ -33,3 +33,6 @@ __pycache__/
 
 # Private notes (security incidents, local only)
 .private/
+
+# Internal working notes
+HANDOFF.md

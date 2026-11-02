@@ -1,6 +1,7 @@
 """FastAPI app factory. Run: uvicorn app.main:create_app --factory"""
 import logging
 import secrets
+import threading
 import time
 from collections.abc import Iterator
 
@@ -10,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import Settings, get_settings
 from app.db import connect, init_db
 from app.logging_setup import configure_logging
+from app.pipeline.orchestrate import run_pipeline
 from app.web import routes
 
 log = logging.getLogger("sts.http")
@@ -25,6 +27,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Stall to Store", docs_url=None, redoc_url=None)
     app.state.settings = settings
+    app.state.start_pipeline = lambda run_id: threading.Thread(
+        target=run_pipeline, args=(run_id, settings), daemon=True).start()
 
     def get_conn() -> Iterator:
         c = connect(settings.db_path)

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     vision_model: str = "muse-spark-1.3"
     transcribe_model: str = "muse-voice-transcribe-1.0"
     segment_model: str = "sam-3.1"
+    sam_prompts: str = "product package;bottle"
     model_timeout_s: float = 120.0
 
     runs_dir: Path = Path("runs")

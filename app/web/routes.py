@@ -21,6 +21,7 @@ from app.money import cedis_input_value, format_cedis
 from app.orders import service as orders
 from app.orders.links import order_message, wa_link
 from app.pipeline.ingest import IngestError, ingest, tools_available
+from app.pipeline.orchestrate import ESTIMATED_COST_USD, can_process, step_states
 from app.pipeline.uploads import UploadError, accept_upload
 
 log = logging.getLogger("sts.web")
@@ -84,7 +85,21 @@ def upload(request: Request, video: UploadFile = File(...), conn: sqlite3.Connec
         catalogue.set_run_status(conn, run_id, "ingested", "ingest")
     except IngestError as exc:
         catalogue.set_run_status(conn, run_id, "failed", "ingest", str(exc))
+    else:
+        if can_process(s):
+            _begin_processing(request, conn, run_id)
     return RedirectResponse(f"/r/{run['review_token']}", status_code=303)
+
+
+def _begin_processing(request: Request, conn, run_id: str) -> bool:
+    """Claim the run atomically, so a double click can never start (and bill) it twice."""
+    claimed = conn.execute("UPDATE runs SET status = 'processing', stage = NULL, error = NULL"
+                           " WHERE id = ? AND status IN ('ingested', 'failed') AND source = 'real'"
+                           " AND NOT EXISTS (SELECT 1 FROM products WHERE run_id = ?)", (run_id, run_id)).rowcount
+    conn.commit()
+    if claimed:
+        request.app.state.start_pipeline(run_id)
+    return bool(claimed)
 
 
 @router.post("/dev/fixture")
@@ -136,7 +151,8 @@ def _review_ctx(conn, request: Request, run: dict, error: str | None = None, not
         metadata = json.loads(meta_path.read_text(encoding="utf-8"))
     counts = {k: sum(1 for p in products if p["status"] == k) for k in ("draft", "approved", "hidden")}
     return {"run": run, "products": products, "shop": shop, "metadata": metadata, "counts": counts,
-            "story": _run_story(s, run, metadata),
+            "story": _run_story(s, run, metadata), "steps": step_states(run), "can_process": can_process(s),
+            "estimated_cost": ESTIMATED_COST_USD,
             "has_tracking_video": (run_dir(s.runs_dir, run["id"]) / "artefacts" / "tracking.mp4").is_file(),
             "cards": [_card_ctx(conn, run, p) for p in products], "error": error, "notice": notice,
             "orders": orders.list_orders(conn, shop["id"]) if shop else []}
@@ -190,6 +206,15 @@ def product_suggestion(request: Request, token: str, product_id: int, mention_id
                        conn: sqlite3.Connection = Depends(conn_dep)):
     return _product_action(request, conn, token, product_id,
                            lambda run: catalogue.use_suggestion(conn, run["id"], product_id, mention_id))
+
+
+@router.post("/r/{token}/process")
+def process_video(request: Request, token: str, conn: sqlite3.Connection = Depends(conn_dep)):
+    run = _run_or_404(conn, token)
+    if not can_process(settings_of(request)):
+        return _review_response(request, conn, run, error="AI processing is switched off on this server.", status_code=400)
+    _begin_processing(request, conn, run["id"])
+    return RedirectResponse(f"/r/{token}", status_code=303)
 
 
 @router.post("/r/{token}/publish")

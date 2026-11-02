@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Review your shop · Stall to Store{% endblock %}
+{% block head %}{% if run.status == 'processing' %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
 {% block topnote %}<span class="topbar-note">Keep this link private</span>{% endblock %}
 {% block content %}
 <section class="hero">
   <p class="eyebrow">Your draft shop</p>
-  <h1>Check it. Then go live.</h1>
-  <p>We built this draft from your video. You have the final say: nothing reaches customers until you approve it.</p>
+  <h1>{% if run.status == 'processing' %}Your video is in good hands.{% else %}Check it. Then go live.{% endif %}</h1>
+  <p>{% if run.status == 'processing' %}We are building a draft shop from your video. You will have the final say: nothing reaches customers until you approve it.{% else %}We built this draft from your video. You have the final say: nothing reaches customers until you approve it.{% endif %}</p>
 </section>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
@@ -31,7 +32,20 @@
   <p class="hint"><strong>Run status:</strong> {{ run.status }}{% if run.stage %} (last stage: {{ run.stage }}){% endif %}{% if metadata %} · {{ '%.1f'|format(metadata.duration_s) }} s, {{ metadata.frame_count }} frames{% endif %}</p>
   {% if run.error %}<p class="error">{{ run.error }}</p>{% endif %}
   {% if not products and run.source == 'real' %}
+  {% if run.status == 'processing' %}
+  <h2 style="margin-top:8px">Working on your video</h2>
+  <p class="hint">This usually takes 5 to 10 minutes. You can leave this page open.</p>
+  <ol class="steps-list">{% for step in steps %}<li class="{{ step.state }}">{{ step.label }}</li>{% endfor %}</ol>
+  {% elif run.status in ('draft_ready', 'published') %}
+  <p style="margin-top:8px">We could not find any products in this video. Try filming closer, with labels facing the camera.</p>
+  {% elif can_process %}
+  <form method="post" action="/r/{{ run.review_token }}/process" style="margin-top:10px">
+    <p class="hint" style="margin-bottom:8px">Runs Meta's AI models on this video, about ${{ '%.2f'|format(estimated_cost) }} in API credits.</p>
+    <button type="submit">{% if run.status == 'failed' %}Try again{% else %}Find my products{% endif %}</button>
+  </form>
+  {% else %}
   <p style="margin-top:8px">No draft products yet. Transcription, tracking and identification have not run for this video: they need verified Meta API access.</p>
+  {% endif %}
   {% endif %}
 </section>
 

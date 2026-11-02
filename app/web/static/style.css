@@ -43,6 +43,13 @@ main { max-width: 1080px; margin: 0 auto; padding: 8px 16px 112px; }
 label { display: block; font-size: .82rem; font-weight: 600; color: var(--ink-soft); margin: 10px 0 0; }
 input { display: block; width: 100%; font: inherit; color: var(--ink); background: #fffdf8; border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; margin-top: 4px; min-height: 44px; }
 input:focus { outline: 2px solid var(--gold); outline-offset: 1px; border-color: var(--gold); }
+.steps-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.steps-list li { padding: 7px 0 7px 28px; color: var(--ink-soft); position: relative; }
+.steps-list li::before { content: ""; position: absolute; left: 4px; top: 13px; width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+.steps-list li.done { color: var(--ink); }
+.steps-list li.done::before { background: var(--forest); }
+.steps-list li.active { color: var(--forest-deep); font-weight: 700; }
+.steps-list li.active::before { background: var(--gold); box-shadow: 0 0 0 4px var(--gold-soft); }
 .hint { color: var(--ink-soft); font-size: .88rem; }
 
 button, .button { display: inline-flex; align-items: center; justify-content: center; font: inherit; font-weight: 700; border: 0; border-radius: 12px; padding: 11px 18px; min-height: 46px; background: var(--forest); color: #fff; cursor: pointer; text-decoration: none; transition: background .15s, transform .1s; }

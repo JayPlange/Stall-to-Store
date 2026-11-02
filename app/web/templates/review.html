@@ -34,7 +34,7 @@
   {% if not products and run.source == 'real' %}
   {% if run.status == 'processing' %}
   <h2 style="margin-top:8px">Working on your video</h2>
-  <p class="hint">This usually takes 5 to 10 minutes. You can leave this page open.</p>
+  <p class="hint">Your draft is usually ready in about 3 minutes. The photos and tracking video finish a little later.</p>
   <ol class="steps-list">{% for step in steps %}<li class="{{ step.state }}">{{ step.label }}</li>{% endfor %}</ol>
   {% elif run.status in ('draft_ready', 'published') %}
   <p style="margin-top:8px">We could not find any products in this video. Try filming closer, with labels facing the camera.</p>

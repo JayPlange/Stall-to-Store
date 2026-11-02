@@ -27,7 +27,8 @@ GENERIC_PRODUCT_WORDS = {"water", "kettle", "baby", "wipe", "wipes", "milk", "po
                          "premium", "still", "classic", "blend", "concentrated", "dairy", "non", "creamer",
                          "fabric", "conditioner", "softener", "softeners", "washing", "multi", "purpose",
                          "scourer", "scorer", "cream", "lotion", "oil"}
-MIN_ID_CONFIDENCE = 0.3
+MIN_ID_CONFIDENCE = 0.5
+SAME_BRAND_RATIO = 0.8
 LINK_AUTO_CONFIDENCE = 0.8  # placeholder: tune on tuning videos only
 # Merging SAM prompts: one request per noun phrase can find the same object twice.
 MIN_TRACK_HITS = 5
@@ -95,6 +96,30 @@ def _duplicates(track: Track, other: Track) -> bool:
     if len(shared) < MIN_SHARED_FRAMES:
         return False
     return sum(_inside(a, b) for a, b in shared) / len(shared) >= DUPLICATE_OVERLAP
+
+
+def _same_brand(a: str | None, b: str | None) -> bool:
+    x, y = "".join(_tokens(a)), "".join(_tokens(b))
+    return bool(x and y) and SequenceMatcher(None, x, y).ratio() >= SAME_BRAND_RATIO
+
+
+def unusable_tracks(tracks: list[Track], guesses: dict[str, dict]) -> dict[str, str]:
+    """Tracks that must not become products, each with a reason: unreadable background, or a part of a product."""
+    out = {}
+    for t in tracks:
+        g = guesses.get(t.track_id, {})
+        if t.track_id in guesses and not is_identifiable(g.get("brand"), g.get("name"), g.get("confidence")):
+            out[t.track_id] = "nothing readable"
+    for t in tracks:
+        g = guesses.get(t.track_id, {})
+        if t.track_id in out or g.get("name"):
+            continue  # a track with its own product name is a product, even when it touches another
+        whole = next((o for o in tracks if o is not t and o.track_id not in out and len(o.frames) > len(t.frames)
+                      and _same_brand(g.get("brand"), guesses.get(o.track_id, {}).get("brand"))
+                      and _duplicates(t, o)), None)
+        if whole:
+            out[t.track_id] = f"part of {whole.track_id}"
+    return out
 
 
 def merge_tracks(tracks: list[Track]) -> tuple[list[Track], dict[str, str]]:

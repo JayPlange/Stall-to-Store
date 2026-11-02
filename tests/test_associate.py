@@ -5,6 +5,7 @@ from app.models.types import FrameHit, PriceLink, PriceMention, RankedCandidate,
 from app.pipeline.keyframes import make_contact_sheet, ranked_frames
 from app.pipeline.overlay import box_at
 from app.pipeline.associate import (MentionDecision, TrackDecision, apply_price_links, associate, candidates_for, is_identifiable, mention_window, merge_tracks,
+                                    unusable_tracks,
                                     name_similarity)
 
 NAMES = {tid: name for tid, _b, name, *_ in FIXTURE_TRACKS}
@@ -90,6 +91,7 @@ def test_misheard_and_split_brands_still_match():
 
 def test_only_empty_low_confidence_tracks_are_filtered():
     assert not is_identifiable(None, None, 0.1)
+    assert not is_identifiable(None, None, 0.3)  # real floor tile, second run
     assert is_identifiable("Comfort", None, 0.4)
     assert is_identifiable(None, "Baby Wipes", 0.1)
     assert is_identifiable(None, None, 0.8)      # unreadable real product: seller still sees it
@@ -181,3 +183,26 @@ def test_contact_sheet_numbers_every_product(tmp_path):
     out = make_contact_sheet([(1, img), (2, img), (3, img), (4, img), (5, img)], tmp_path / "sheet.jpg")
     with Image.open(out) as s:
         assert s.size == (1200, 600)
+
+
+def test_unusable_tracks_drops_background_and_parts_only():
+    box = (100, 100, 300, 300)
+    whole = Track("a", "x", [FrameHit(i, i / 2, box) for i in range(20)])
+    flap = Track("b", "x", [FrameHit(i, i / 2, (120, 120, 200, 180)) for i in range(5)])
+    floor = Track("c", "x", [FrameHit(i, i / 2, (0, 0, 50, 50)) for i in range(10)])
+    sachet = Track("d", "x", [FrameHit(i, i / 2, (120, 120, 200, 180)) for i in range(5)])
+    guesses = {"a": {"brand": "AILYON", "name": "Water Kettle", "confidence": 0.8},
+               "b": {"brand": "AILYONS", "name": None, "confidence": 0.35},
+               "c": {"brand": None, "name": None, "confidence": 0.3},
+               "d": {"brand": "Comfort", "name": None, "confidence": 0.5}}
+    out = unusable_tracks([whole, flap, floor, sachet], guesses)
+    assert out == {"b": "part of a", "c": "nothing readable"}  # a different brand held in front stays
+
+
+def test_named_item_inside_another_track_stays():
+    box = (100, 100, 300, 300)
+    big = Track("a", "x", [FrameHit(i, i / 2, box) for i in range(20)])
+    small = Track("b", "x", [FrameHit(i, i / 2, (120, 120, 200, 180)) for i in range(5)])
+    guesses = {"a": {"brand": "Comfort", "name": "Blue Ultra", "confidence": 0.9},
+               "b": {"brand": "Comfort", "name": "Blue Ultra", "confidence": 0.9}}
+    assert unusable_tracks([big, small], guesses) == {}

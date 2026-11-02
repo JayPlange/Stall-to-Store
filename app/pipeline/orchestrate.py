@@ -20,7 +20,7 @@ STEPS = [("transcribe", "Listening to your narration"), ("prices", "Picking out 
          ("associate", "Building your draft shop"), ("cutouts", "Cutting out product photos"),
          ("overlay", "Making your tracking video")]
 OPTIONAL = {"link", "cutouts", "overlay"}
-ESTIMATED_COST_USD = 0.10
+ESTIMATED_COST_USD = 0.13
 
 
 def can_process(s: Settings) -> bool:

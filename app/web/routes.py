@@ -3,6 +3,7 @@
 The review token in the URL is the seller's only credential for their run; it is never logged.
 HTMX requests get partials; plain form posts get a full page, so everything works without JS.
 """
+import hmac
 import json
 import logging
 import sqlite3
@@ -70,8 +71,13 @@ def index(request: Request):
 
 
 @router.post("/runs")
-def upload(request: Request, video: UploadFile = File(...), conn: sqlite3.Connection = Depends(conn_dep)):
+def upload(request: Request, video: UploadFile = File(...), access_code: str = Form(""),
+           conn: sqlite3.Connection = Depends(conn_dep)):
     s = settings_of(request)
+    required = s.upload_code.get_secret_value() if s.upload_code else ""
+    if required and not hmac.compare_digest(required.encode(), access_code.encode()):
+        return templates.TemplateResponse(request, "index.html", {"settings": s, "error": "That access code is not right."},
+                                          status_code=403)
     run_id = new_run_id()
     rdir = run_dir(s.runs_dir, run_id, create=True)
     try:

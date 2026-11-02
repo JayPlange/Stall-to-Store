@@ -11,7 +11,7 @@ from app.models import segment, transcribe, vision
 from app.models.base import CallContext, MetaClient
 from app.models.types import Crop, PriceLink, PriceMention, Track, Transcript
 from app.pipeline import overlay as overlay_stage
-from app.pipeline.associate import apply_price_links, associate, is_identifiable, merge_tracks
+from app.pipeline.associate import apply_price_links, associate, merge_tracks, unusable_tracks
 from app.pipeline.ingest import ingest
 from app.pipeline.keyframes import (PHOTO_CANDIDATES, make_contact_sheet, make_cutout, mask_fill, ranked_frames,
                                     save_keyframe)
@@ -80,10 +80,9 @@ def run_stage(stage: str, run: dict, s: Settings, conn, client: MetaClient, prom
         mentions = [PriceMention(**m) for m in pm["mentions"]]
         guesses = {g["track_id"]: g for g in _read(art / "guesses.json")}
         kfs = _read(art / "keyframes.json")
-        filtered = [t.track_id for t in tracks if t.track_id in guesses and not is_identifiable(
-            guesses[t.track_id].get("brand"), guesses[t.track_id].get("name"),
-            guesses[t.track_id].get("confidence"))]
-        tracks = [t for t in tracks if t.track_id not in filtered]
+        unusable = unusable_tracks(tracks, guesses)
+        filtered = sorted(unusable)
+        tracks = [t for t in tracks if t.track_id not in unusable]
         names = {tid: " ".join(x for x in (g.get("brand"), g.get("name")) if x) or None
                  for tid, g in guesses.items()}
         decisions, per_track = associate(mentions, tracks, pm["granularity"], meta["frame_fps"],
@@ -98,7 +97,7 @@ def run_stage(stage: str, run: dict, s: Settings, conn, client: MetaClient, prom
             apply_price_links(decisions, per_track, mentions, links)
         _write(art / "association.json", {"mentions": [asdict(d) for d in decisions],
                                           "tracks": {k: asdict(v) for k, v in per_track.items()},
-                                          "filtered_tracks": filtered})
+                                          "filtered_tracks": filtered, "filter_reasons": unusable})
         catalogue.store_draft(conn, run_id, proposals, mentions, decisions, per_track)
     elif stage == "cutouts":
         tracks = {t["track_id"]: Track.from_dict(t) for t in _read(art / "tracks.json")["tracks"]}
@@ -136,9 +135,12 @@ def run_stage(stage: str, run: dict, s: Settings, conn, client: MetaClient, prom
     elif stage == "link":
         kfs = _read(art / "keyframes.json")
         products, tiles = [], []
-        for g in _read(art / "guesses.json"):
+        guesses = _read(art / "guesses.json")
+        tracks = [Track.from_dict(t) for t in _read(art / "tracks.json")["tracks"]]
+        unusable = unusable_tracks(tracks, {g["track_id"]: g for g in guesses})
+        for g in guesses:
             tid, path = g["track_id"], kfs.get(g["track_id"])
-            if path and is_identifiable(g.get("brand"), g.get("name"), g.get("confidence")):
+            if path and tid not in unusable:
                 number = len(products) + 1
                 cutout = rdir / "cutouts" / f"{tid}.jpg"
                 label = " ".join(x for x in (g.get("brand"), g.get("name"), g.get("size")) if x)

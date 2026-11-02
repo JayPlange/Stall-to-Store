@@ -181,3 +181,13 @@ def test_cannot_touch_other_runs_product(fixture_client, settings):
     other = list_products(conn, run_by_token(conn, t2)["id"])[0]["id"]
     assert c.post(f"/r/{t1}/products/{other}/status", data={"status": "approved"}).status_code == 404
     assert c.get(f"/r/{t1}/img/{other}").status_code == 404
+
+
+def test_upload_code_blocks_strangers(settings, tmp_path):
+    from pydantic import SecretStr
+    c = TestClient(create_app(settings.model_copy(update={"upload_code": SecretStr("market-2026")})))
+    assert "Access code" in c.get("/").text
+    r = c.post("/runs", files={"video": ("a.mp4", b"x", "video/mp4")}, data={"access_code": "wrong"})
+    assert r.status_code == 403 and not list(settings.runs_dir.iterdir())
+    r = c.post("/runs", files={"video": ("a.mp4", b"x", "video/mp4")}, data={"access_code": "market-2026"})
+    assert r.status_code == 400  # passes the code, then fails normal validation

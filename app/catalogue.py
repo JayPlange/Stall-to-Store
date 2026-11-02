@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from app.artefacts import new_run_id
 from app.db import iso, utcnow
 from app.money import PriceError, parse_cedis
-from app.pipeline.associate import MentionDecision, TrackDecision
+from app.pipeline.associate import MentionDecision, TrackDecision, name_similarity
 from app.models.types import PriceMention
 
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,38})[a-z0-9]$")
@@ -127,12 +127,12 @@ def get_product(conn: sqlite3.Connection, run_id: str, product_id: int) -> dict:
 
 
 def suggestions(conn: sqlite3.Connection, product_id: int) -> list[dict]:
-    """Price mentions offered to the seller for this product, best candidate rank first."""
-    rows = conn.execute(
-        "SELECT m.id, m.text, m.amount_pesewas, m.t_start, m.source, c.rank, c.score FROM candidates c"
-        " JOIN price_mentions m ON m.id = c.mention_id WHERE c.product_id = ? ORDER BY c.rank, c.score DESC",
-        (product_id,)).fetchall()
-    return [dict(r) for r in rows]
+    """Every price heard in this run, the likeliest for this product first. The seller decides."""
+    p = conn.execute("SELECT run_id, brand, name FROM products WHERE id = ?", (product_id,)).fetchone()
+    rows = conn.execute("SELECT id, text, amount_pesewas, t_start, source, referent FROM price_mentions"
+                        " WHERE run_id = ? ORDER BY id", (p["run_id"],)).fetchall()
+    label = " ".join(x for x in (p["brand"], p["name"]) if x)
+    return sorted((dict(r) for r in rows), key=lambda m: -name_similarity(m["referent"], label))
 
 
 # -- seller edits ---------------------------------------------------------
@@ -184,11 +184,11 @@ def update_product(conn: sqlite3.Connection, run_id: str, product_id: int, *, br
 
 
 def use_suggestion(conn: sqlite3.Connection, run_id: str, product_id: int, mention_id: int) -> dict:
-    row = conn.execute("SELECT m.amount_pesewas FROM candidates c JOIN price_mentions m ON m.id = c.mention_id"
-                       " WHERE c.product_id = ? AND m.id = ? AND m.run_id = ?",
-                       (product_id, mention_id, run_id)).fetchone()
+    get_product(conn, run_id, product_id)
+    row = conn.execute("SELECT amount_pesewas FROM price_mentions WHERE id = ? AND run_id = ?",
+                       (mention_id, run_id)).fetchone()
     if not row:
-        raise CatalogueError("that price was not suggested for this product")
+        raise CatalogueError("that price was not heard in this video")
     pesewas = row["amount_pesewas"]
     return update_product(conn, run_id, product_id, price=f"{pesewas // 100}.{pesewas % 100:02d}")
 

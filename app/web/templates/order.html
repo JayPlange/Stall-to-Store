@@ -1,15 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Your order · {{ shop.seller_name }}{% endblock %}
+{% block topbar %}{% endblock %}
 {% block content %}
-<h1>Your order {{ order.reference }}</h1>
-<section class="card">
-  <ul class="lines">
-    {% for l in order.lines %}<li>{{ l.qty }} × {{ l.label }} @ {{ l.unit_price_pesewas|cedis }} = {{ l.line_total_pesewas|cedis }}</li>{% endfor %}
-  </ul>
-  <p class="price">Total {{ order.total_pesewas|cedis }}</p>
-</section>
-<p class="notice"><strong>Your order has not been sent yet.</strong> Tap the button to open WhatsApp with the order filled in, then press <strong>Send</strong>. {{ shop.seller_name }} will confirm with you on WhatsApp.</p>
-<a class="button" href="{{ wa_link }}" rel="noopener noreferrer">Open WhatsApp to send</a>
-<p class="hint">Prices are held until the seller confirms. If the seller changes a price first, they will ask you to order again.</p>
-<p><a href="/s/{{ shop.slug }}">Back to the shop</a></p>
+<div class="receipt" style="margin-top:20px">
+  <section class="card">
+    <p class="eyebrow" style="color:var(--clay)">{{ shop.seller_name }}</p>
+    <h1 style="font-size:1.8rem">Your order</h1>
+    <p style="margin-top:8px"><span class="ref">{{ order.reference }}</span></p>
+    <ul class="lines">
+      {% for l in order.lines %}<li><span>{{ l.qty }} × {{ l.label }} @ {{ l.unit_price_pesewas|cedis }}</span><strong>{{ l.line_total_pesewas|cedis }}</strong></li>{% endfor %}
+    </ul>
+    <div class="total-row"><span>Total</span><span class="price">{{ order.total_pesewas|cedis }}</span></div>
+  </section>
+  <p class="notice"><strong>Your order has not been sent yet.</strong> Tap the button to open WhatsApp with your order filled in, then press <strong>Send</strong>. {{ shop.seller_name }} will confirm with you on WhatsApp.</p>
+  <a class="button whatsapp" href="{{ wa_link }}" rel="noopener noreferrer">Open WhatsApp to send</a>
+  <p class="hint" style="margin-top:12px">If the seller changes a price before confirming, they will ask you to order again.</p>
+  <p style="margin-top:12px"><a href="/s/{{ shop.slug }}">Back to the shop</a></p>
+</div>
 {% endblock %}

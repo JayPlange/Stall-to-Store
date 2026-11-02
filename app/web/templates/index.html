@@ -1,18 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Stall to Store</h1>
-<p class="lead">Film your stall for under a minute and say each price out loud. You review the products, then publish a shop page with WhatsApp ordering.</p>
+<section class="hero">
+  <p class="eyebrow">For market sellers</p>
+  <h1>Film your stall. Get a shop.</h1>
+  <p>Walk past your products and say each price out loud. Stall to Store turns that one video into a shop page your customers can order from on WhatsApp.</p>
+</section>
+
+<section class="steps">
+  <div class="step"><i>1</i><b>Film</b><p>Show each product and say its price.</p></div>
+  <div class="step"><i>2</i><b>Check</b><p>Confirm the names, photos and prices. Nothing goes live without you.</p></div>
+  <div class="step"><i>3</i><b>Sell</b><p>Share your shop link. Orders come to your WhatsApp.</p></div>
+</section>
+
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 <form class="card" method="post" action="/runs" enctype="multipart/form-data">
-  <label for="video">Stall video ({{ settings.min_duration_s|int }} to {{ settings.max_duration_s|int }} seconds, up to {{ settings.max_upload_mb }} MB)</label>
+  <h2>Upload your stall video</h2>
+  <label for="video">Video, {{ settings.min_duration_s|int }} to {{ settings.max_duration_s|int }} seconds, up to {{ settings.max_upload_mb }} MB</label>
   <input id="video" name="video" type="file" accept="video/*" capture="environment" required>
-  <p class="hint">Film products and your hands only, not faces.</p>
+  <p class="hint" style="margin:8px 0 12px">Film products and your hands only, not faces.</p>
   <button type="submit">Upload video</button>
 </form>
 {% if settings.dev_fixtures %}
-<form class="card dev" method="post" action="/dev/fixture">
-  <p>Development only: load a hand-written fixture run to try the review screen. It is labelled as a fixture everywhere.</p>
-  <button type="submit" class="secondary">Load development fixture</button>
+<form class="card" method="post" action="/dev/fixture" style="margin-top:14px;border-style:dashed">
+  <p class="hint">Development only: load a hand-written fixture run to try the review screen. It is labelled as a fixture everywhere.</p>
+  <button type="submit" class="secondary" style="margin-top:10px">Load development fixture</button>
 </form>
 {% endif %}
 {% endblock %}

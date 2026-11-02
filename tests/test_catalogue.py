@@ -1,7 +1,7 @@
 import pytest
 
 from app.catalogue import (CatalogueError, get_product, normalise_whatsapp, publish, set_status, shop_products,
-                           update_product, validate_slug)
+                           suggestions, update_product, use_suggestion, validate_slug)
 from tests.conftest import make_draft
 
 
@@ -83,3 +83,16 @@ def test_whatsapp_rejects(raw):
 def test_bad_slugs(slug):
     with pytest.raises(CatalogueError):
         validate_slug(slug)
+
+
+def test_suggestions_list_every_heard_price_best_name_first(conn):
+    from app.fixtures import load_fixture
+    from pathlib import Path
+    import tempfile
+    run = load_fixture(conn, Path(tempfile.mkdtemp()))
+    tomato = conn.execute("SELECT id FROM products WHERE run_id = ? AND track_id = 't2'", (run["id"],)).fetchone()[0]
+    found = suggestions(conn, tomato)
+    assert len(found) == 4 and found[0]["referent"] == "tomato paste"
+    other_run = make_draft(conn, [{"name": "Soap", "price": 100}])
+    with pytest.raises(CatalogueError):
+        use_suggestion(conn, other_run["run"]["id"], other_run["ids"][0], found[0]["id"])

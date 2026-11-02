@@ -1,40 +1,62 @@
 {% extends "base.html" %}
 {% block title %}Review your shop · Stall to Store{% endblock %}
+{% block topnote %}<span class="topbar-note">Keep this link private</span>{% endblock %}
 {% block content %}
-<h1>Review your products</h1>
+<section class="hero">
+  <p class="eyebrow">Your draft shop</p>
+  <h1>Check it. Then go live.</h1>
+  <p>We built this draft from your video. You have the final say: nothing reaches customers until you approve it.</p>
+</section>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
-<p class="hint">Keep this page's link private: it lets you edit your shop.</p>
 
-<section class="card run-status">
-  <p><strong>Run status:</strong> {{ run.status }}{% if run.stage %} (last stage: {{ run.stage }}){% endif %}</p>
+{% if story %}
+<div class="section-head"><h2>What the AI found in your video</h2>
+  {% if metadata %}<p>From your {{ '%.0f'|format(metadata.duration_s) }} second video.</p>{% endif %}</div>
+<section class="story">
+  {% for s in story %}
+  <div class="story-card"><span class="model">{{ s.model }}</span><p class="stat">{{ s.stat }}</p><p>{{ s.job }}</p></div>
+  {% endfor %}
+</section>
+{% for s in story %}{% if s.quote %}
+<details class="quote"><summary>Read what was heard</summary><blockquote>{{ s.quote }}</blockquote></details>
+{% endif %}{% endfor %}
+{% endif %}
+
+<section class="card" style="margin-top:16px">
+  <p class="hint"><strong>Run status:</strong> {{ run.status }}{% if run.stage %} (last stage: {{ run.stage }}){% endif %}{% if metadata %} · {{ '%.1f'|format(metadata.duration_s) }} s, {{ metadata.frame_count }} frames{% endif %}</p>
   {% if run.error %}<p class="error">{{ run.error }}</p>{% endif %}
-  {% if metadata %}<p class="hint">Video: {{ '%.1f'|format(metadata.duration_s) }} s, {{ metadata.width }}×{{ metadata.height }}, {{ metadata.frame_count }} frames at {{ metadata.frame_fps|int }} fps.</p>{% endif %}
   {% if not products and run.source == 'real' %}
-  <p>No draft products yet. Transcription, tracking and identification have not run for this video: they need verified Meta API access.</p>
+  <p style="margin-top:8px">No draft products yet. Transcription, tracking and identification have not run for this video: they need verified Meta API access.</p>
   {% endif %}
 </section>
 
 {% if products %}
-<p class="summary">{{ counts.approved }} approved · {{ counts.draft }} draft · {{ counts.hidden }} hidden. Only approved products appear in your shop.</p>
+<div class="section-head"><h2>Your products</h2></div>
+<div class="progress" id="progress" data-total="{{ products|length }}">
+  <div class="progress-row"><span id="progress-text">{{ counts.approved }} of {{ products|length }} approved</span><span class="hint">Only approved products appear in your shop</span></div>
+  <div class="bar"><i id="progress-bar" style="width:{{ (100 * counts.approved / products|length)|round }}%"></i></div>
+</div>
+<p class="hint" style="margin-bottom:12px">{{ counts.approved }} approved · {{ counts.draft }} draft · {{ counts.hidden }} hidden.</p>
+<div class="products">
 {% for c in cards %}{% with p=c.p, suggestions=c.suggestions, error=c.error %}{% include "_product_card.html" %}{% endwith %}{% endfor %}
+</div>
 
+<div class="section-head"><h2>{% if shop and shop.published_at %}Update your shop{% else %}Publish your shop{% endif %}</h2></div>
 <section class="card">
-  <h2>{% if shop and shop.published_at %}Update your shop{% else %}Publish your shop{% endif %}</h2>
   <form method="post" action="/r/{{ run.review_token }}/publish">
     <label>Shop name <input name="seller_name" value="{{ shop.seller_name if shop else '' }}" required maxlength="120"></label>
     <label>WhatsApp number <input name="seller_whatsapp" value="{{ '+' ~ shop.seller_whatsapp if shop else '' }}" inputmode="tel" placeholder="+233 20 000 0001" required></label>
     <label>Shop link /s/<input name="slug" value="{{ shop.slug if shop else '' }}" pattern="[a-z0-9-]{3,40}" required></label>
-    <button type="submit">Publish {{ counts.approved }} approved product{{ '' if counts.approved == 1 else 's' }}</button>
+    <button type="submit" style="margin-top:14px">Publish {{ counts.approved }} approved product{{ '' if counts.approved == 1 else 's' }}</button>
   </form>
-  {% if shop and shop.published_at %}<p>Live at <a href="/s/{{ shop.slug }}">/s/{{ shop.slug }}</a></p>{% endif %}
+  {% if shop and shop.published_at %}<p style="margin-top:12px">Live at <a href="/s/{{ shop.slug }}">/s/{{ shop.slug }}</a></p>{% endif %}
 </section>
 {% endif %}
 
 {% if orders %}
+<div class="section-head"><h2>Orders</h2><p>A customer's WhatsApp message carries the reference code. Confirm only after you have received it.</p></div>
 <section class="card">
-  <h2>Order proposals</h2>
-  <p class="hint">A customer's WhatsApp message carries the reference code. Confirm only after you have received it.</p>
   {% for o in orders %}
   <div class="order-row">
     <strong>{{ o.reference }}</strong> · {{ o.total_pesewas|cedis }} · {{ o.status }}
@@ -47,4 +69,16 @@
   {% endfor %}
 </section>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  document.body.addEventListener("htmx:afterSwap", function () {
+    var box = document.getElementById("progress");
+    if (!box) return;
+    var total = Number(box.dataset.total);
+    var done = document.querySelectorAll('article.product[data-status="approved"]').length;
+    document.getElementById("progress-text").textContent = done + " of " + total + " approved";
+    document.getElementById("progress-bar").style.width = Math.round(100 * done / total) + "%";
+  });
+</script>
 {% endblock %}

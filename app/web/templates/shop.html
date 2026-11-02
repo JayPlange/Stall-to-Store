@@ -1,23 +1,69 @@
 {% extends "base.html" %}
 {% block title %}{{ shop.seller_name }} · Stall to Store{% endblock %}
+{% block topbar %}{% endblock %}
 {% block content %}
-<h1>{{ shop.seller_name }}</h1>
-<p class="hint">Choose quantities, then send your order to the seller on WhatsApp.</p>
+<section class="shop-hero" style="margin-top:16px">
+  <p class="eyebrow">Order on WhatsApp</p>
+  <h1>{{ shop.seller_name }}</h1>
+  <p>Choose what you need, then send your order to the seller on WhatsApp.</p>
+</section>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-<form method="post" action="/s/{{ shop.slug }}/order">
+<form method="post" action="/s/{{ shop.slug }}/order" id="order-form">
   <div class="grid">
   {% for p in products %}
     <div class="card shop-item">
-      <img src="/s/{{ shop.slug }}/img/{{ p.id }}" alt="{{ p.name }}" loading="lazy">
-      <h2>{{ p.brand or '' }} {{ p.name }}</h2>
+      <div class="photo"><img src="/s/{{ shop.slug }}/img/{{ p.id }}" alt="{{ p.name }}" loading="lazy"></div>
+      {% if p.brand %}<p class="brand-line">{{ p.brand }}</p>{% endif %}
+      <h2>{{ p.name }}</h2>
       {% if p.size %}<p class="hint">{{ p.size }}</p>{% endif %}
       <p class="price">{{ p.price_pesewas|cedis }}</p>
-      <label>Quantity <input type="number" name="qty_{{ p.id }}" min="0" max="50" value="0" inputmode="numeric"></label>
+      <div class="stepper">
+        <button type="button" data-step="-1" aria-label="One less {{ p.name }}">−</button>
+        <input type="number" name="qty_{{ p.id }}" min="0" max="50" value="0" inputmode="numeric" data-price="{{ p.price_pesewas }}" aria-label="Quantity of {{ p.name }}">
+        <button type="button" data-step="1" aria-label="One more {{ p.name }}">+</button>
+      </div>
     </div>
   {% else %}
     <p>No products are available right now.</p>
   {% endfor %}
   </div>
-  {% if products %}<button type="submit" class="sticky">Prepare WhatsApp order</button>{% endif %}
+  {% if products %}
+  <div class="basket">
+    <div class="basket-inner">
+      <p class="basket-total"><span id="basket-total">GH₵0.00</span><small id="basket-count">Nothing chosen yet</small></p>
+      <button type="submit">Prepare WhatsApp order</button>
+    </div>
+  </div>
+  {% endif %}
 </form>
+<p class="footer-note">Powered by Stall to Store</p>
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    var form = document.getElementById("order-form");
+    if (!form) return;
+    var inputs = form.querySelectorAll("input[data-price]");
+    function money(p) { return "GH₵" + Math.floor(p / 100).toLocaleString("en-GH") + "." + String(p % 100).padStart(2, "0"); }
+    function update() {
+      var total = 0, items = 0;
+      inputs.forEach(function (i) {
+        var q = Math.max(0, parseInt(i.value, 10) || 0);
+        total += q * Number(i.dataset.price);
+        items += q;
+      });
+      document.getElementById("basket-total").textContent = money(total);
+      document.getElementById("basket-count").textContent = items ? items + (items === 1 ? " item" : " items") : "Nothing chosen yet";
+    }
+    form.addEventListener("click", function (e) {
+      var step = e.target.closest("[data-step]");
+      if (!step) return;
+      var input = step.parentElement.querySelector("input");
+      input.value = Math.min(50, Math.max(0, (parseInt(input.value, 10) || 0) + Number(step.dataset.step)));
+      update();
+    });
+    form.addEventListener("input", update);
+    update();
+  })();
+</script>
 {% endblock %}

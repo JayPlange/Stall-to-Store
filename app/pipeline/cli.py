@@ -16,6 +16,7 @@ keyframes.json, guesses.json, association.json, cutouts.json. Each stage can be 
 import argparse
 import json
 import sys
+from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
 
@@ -29,7 +30,7 @@ from app.models.base import AdapterNotVerified, CallContext, LiveCallsDisabled, 
 from app.models.types import Crop, PriceMention, Track, Transcript
 from app.pipeline.associate import associate, is_identifiable
 from app.pipeline.ingest import ingest
-from app.pipeline.keyframes import best_frame, make_cutout, save_keyframe
+from app.pipeline.keyframes import PHOTO_CANDIDATES, make_cutout, mask_fill, ranked_frames, save_keyframe
 from app.pipeline.prices_regex import regex_mentions
 
 LIVE_STAGES = {"transcribe", "track", "identify"}
@@ -132,18 +133,30 @@ def main(argv: list[str] | None = None) -> int:
             tracks = {t["track_id"]: Track.from_dict(t) for t in _read(art / "tracks.json")["tracks"]}
             frames = {f["frame_idx"]: rdir / "frames" / f["file"] for f in _read(rdir / "frames.json")["frames"]}
             made, outputs = {}, {}
+            filtered = set(_read(art / "association.json").get("filtered_tracks", []))
             for p in catalogue.list_products(conn, args.run_id):
                 t = tracks.get(p["track_id"])
-                best = best_frame(t, lambda i: frames.get(i, Path("missing"))) if t else None
-                hit = best[0] if best else None
-                prompt_index, _, obj = t.track_id[1:].partition("o") if t else ("", "", "")
-                if hit and prompt_index not in outputs:
+                if not t:
+                    continue
+                others_by_frame = defaultdict(list)
+                for other in tracks.values():
+                    if other.track_id != t.track_id and other.track_id not in filtered:
+                        for h in other.frames:
+                            others_by_frame[h.frame_idx].append(h.box_xyxy)
+                ranked = ranked_frames(t, lambda i: frames.get(i, Path("missing")), others_by_frame)
+                prompt_index, _, obj = t.track_id[1:].partition("o")
+                if prompt_index not in outputs:
                     outputs[prompt_index] = segment.index_masks(
                         (art / f"sam_output_p{prompt_index}.txt").read_text(encoding="utf-8"))
-                mask = outputs[prompt_index].get((obj, hit.frame_idx)) if hit else None
-                if mask is None or not hit.mask_box:
+                options = []
+                for hit, score in ranked[:PHOTO_CANDIDATES]:
+                    mask = outputs[prompt_index].get((obj, hit.frame_idx))
+                    if mask is not None and hit.mask_box:
+                        png = segment.save_mask(mask, art / "masks" / f"{t.track_id}_{hit.frame_idx:05d}.png")
+                        options.append((score * mask_fill(png), hit, png))
+                if not options:
                     continue
-                mask_png = segment.save_mask(mask, art / "masks" / f"{t.track_id}_{hit.frame_idx:05d}.png")
+                _, hit, mask_png = max(options, key=lambda x: x[0])
                 out = make_cutout(frames[hit.frame_idx], mask_png, hit.mask_box, rdir / "cutouts" / f"{t.track_id}.jpg")
                 made[t.track_id] = relative_to_runs(s.runs_dir, out)
                 conn.execute("UPDATE products SET cutout_path = ? WHERE id = ?", (made[t.track_id], p["id"]))

@@ -4,13 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Stall to Store{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v=4">
   <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
 </head>
 <body>
   {% if (run is defined and run and run.source == 'fixture') or (shop is defined and shop and shop.source == 'fixture') %}
   <div class="fixture-banner" role="alert">DEVELOPMENT FIXTURE: hand-written test data, not model output and not a real shop.</div>
   {% endif %}
+  <div class="woven" aria-hidden="true"></div>
+  {% block topbar %}<header class="topbar"><a class="brand" href="/">Stall <span>to</span> Store</a>{% block topnote %}{% endblock %}</header>{% endblock %}
   <main>{% block content %}{% endblock %}</main>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

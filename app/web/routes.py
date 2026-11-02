@@ -101,6 +101,31 @@ def _card_ctx(conn, run: dict, product: dict, error: str | None = None) -> dict:
     return {"run": run, "p": product, "suggestions": catalogue.suggestions(conn, product["id"]), "error": error}
 
 
+def _run_story(s: Settings, run: dict, metadata: dict | None) -> list[dict]:
+    """What each Meta model really produced for this run, read from its saved artefacts. Never fixture data."""
+    if run["source"] != "real":
+        return []
+    art = run_dir(s.runs_dir, run["id"]) / "artefacts"
+    def read(name):
+        path = art / name
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+    story = []
+    if (tracks := read("tracks.json")) is not None:
+        frames = metadata["frame_count"] if metadata else 0
+        story.append({"model": "SAM 3.1", "job": "Found and tracked products in the video",
+                      "stat": f"{len(tracks['tracks'])} objects across {frames} frames"})
+    if (transcript := read("transcript.json")) is not None:
+        words = len(transcript["text"].split())
+        story.append({"model": "Muse Voice Transcribe", "job": "Listened to the seller's narration",
+                      "stat": f"{words} words transcribed", "quote": transcript["text"]})
+    prices, guesses = read("price_mentions.json"), read("guesses.json")
+    if prices is not None or guesses is not None:
+        named = sum(1 for g in guesses or [] if g.get("brand") or g.get("name"))
+        story.append({"model": "Muse Spark", "job": "Read prices from speech and names from product photos",
+                      "stat": f"{len((prices or {}).get('mentions', []))} prices, {named} products named"})
+    return story
+
+
 def _review_ctx(conn, request: Request, run: dict, error: str | None = None, notice: str | None = None) -> dict:
     s = settings_of(request)
     products = catalogue.list_products(conn, run["id"])
@@ -111,6 +136,7 @@ def _review_ctx(conn, request: Request, run: dict, error: str | None = None, not
         metadata = json.loads(meta_path.read_text(encoding="utf-8"))
     counts = {k: sum(1 for p in products if p["status"] == k) for k in ("draft", "approved", "hidden")}
     return {"run": run, "products": products, "shop": shop, "metadata": metadata, "counts": counts,
+            "story": _run_story(s, run, metadata),
             "cards": [_card_ctx(conn, run, p) for p in products], "error": error, "notice": notice,
             "orders": orders.list_orders(conn, shop["id"]) if shop else []}
 

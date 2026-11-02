@@ -6,6 +6,9 @@ from PIL import Image, ImageFilter, ImageStat
 from app.models.types import FrameHit, Track
 
 PAD = 0.08
+EDGE_PX = 2
+EDGE_PENALTY = 0.5
+PHOTO_CANDIDATES = 5  # masks decode slowly, so only the best few frames are checked
 
 
 def sharpness(img: Image.Image) -> float:
@@ -20,8 +23,24 @@ def _crop_box(hit: FrameHit, w: int, h: int) -> tuple[int, int, int, int]:
     return (max(0, int(x0 - px)), max(0, int(y0 - py)), min(w, int(x1 + px)), min(h, int(y1 + py)))
 
 
-def best_frame(track: Track, frame_path_for) -> tuple[FrameHit, float] | None:
-    """Pick the hit maximising normalised area x normalised sharpness."""
+def _overlap(a, b) -> float:
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    return max(0, w) * max(0, h)
+
+
+def _clear_view(hit: FrameHit, other_boxes: list, w: int, h: int) -> float:
+    """1.0 for an unobstructed product; lower if other products cover it or it runs off the frame."""
+    x0, y0, x1, y1 = hit.box_xyxy
+    area = max(1, (x1 - x0) * (y1 - y0))
+    covered = min(1.0, sum(_overlap(hit.box_xyxy, b) for b in other_boxes) / area)
+    at_edge = x0 <= EDGE_PX or y0 <= EDGE_PX or x1 >= w - EDGE_PX or y1 >= h - EDGE_PX
+    return (1 - covered) * (EDGE_PENALTY if at_edge else 1.0)
+
+
+def ranked_frames(track: Track, frame_path_for, others_by_frame: dict | None = None) -> list[tuple[FrameHit, float]]:
+    """Hits best first: normalised area x normalised sharpness x how clear the view is."""
+    others_by_frame = others_by_frame or {}
     scored = []
     for hit in track.frames:
         path = frame_path_for(hit.frame_idx)
@@ -32,13 +51,25 @@ def best_frame(track: Track, frame_path_for) -> tuple[FrameHit, float] | None:
             if box[2] <= box[0] or box[3] <= box[1]:
                 continue
             area = (box[2] - box[0]) * (box[3] - box[1])
-            scored.append((hit, area, sharpness(img.crop(box))))
+            clear = _clear_view(hit, others_by_frame.get(hit.frame_idx, []), *img.size)
+            scored.append((hit, area, sharpness(img.crop(box)), clear))
     if not scored:
-        return None
-    max_a = max(a for _, a, _ in scored) or 1
-    max_s = max(s for _, _, s in scored) or 1
-    hit, a, s = max(scored, key=lambda x: (x[1] / max_a) * (x[2] / max_s))
-    return hit, round((a / max_a) * (s / max_s), 4)
+        return []
+    max_a = max(a for _, a, _, _ in scored) or 1
+    max_s = max(s for _, _, s, _ in scored) or 1
+    ranked = [(hit, round((a / max_a) * (s / max_s) * c, 4)) for hit, a, s, c in scored]
+    return sorted(ranked, key=lambda x: -x[1])
+
+
+def best_frame(track: Track, frame_path_for) -> tuple[FrameHit, float] | None:
+    ranked = ranked_frames(track, frame_path_for)
+    return ranked[0] if ranked else None
+
+
+def mask_fill(mask_path: Path) -> float:
+    """Share of the box the mask covers: low when a hand or another item hides part of the product."""
+    with Image.open(mask_path) as mask:
+        return ImageStat.Stat(mask.convert("L")).mean[0] / 255
 
 
 def save_keyframe(track: Track, frame_path_for, out_dir: Path) -> Path | None:

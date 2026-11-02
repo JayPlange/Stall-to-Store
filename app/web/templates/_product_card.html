@@ -1,35 +1,44 @@
-<article class="product card status-{{ p.status }}" id="product-{{ p.id }}">
+<article class="product card status-{{ p.status }}" id="product-{{ p.id }}" data-status="{{ p.status }}">
   <div class="product-head">
-    <img src="/r/{{ run.review_token }}/img/{{ p.id }}" alt="" loading="lazy" width="96" height="96">
+    <div class="photo"><img src="/r/{{ run.review_token }}/img/{{ p.id }}" alt="{{ p.name or 'Product photo' }}" loading="lazy"></div>
     <div>
-      <span class="badge {{ p.status }}">{{ p.status }}</span>
-      {% if p.match_status == 'auto' %}<span class="badge auto">price heard in video</span>
-      {% elif p.match_status == 'needs_seller' %}<span class="badge needs">check the price</span>
-      {% else %}<span class="badge none">no price heard</span>{% endif %}
-      {% if p.price_source == 'seller' %}<span class="badge seller">price set by you</span>{% endif %}
-      {% if p.match_note %}<p class="hint">{{ p.match_note }}</p>{% endif %}
+      <p class="product-title">{{ p.brand or '' }} {{ p.name or 'Unnamed product' }}</p>
+      <div class="badges">
+        <span class="badge {{ p.status }}">{{ p.status }}</span>
+        {% if p.match_status == 'auto' %}<span class="badge auto">price heard in video</span>
+        {% elif p.match_status == 'needs_seller' %}<span class="badge needs">check the price</span>
+        {% else %}<span class="badge none">no price heard</span>{% endif %}
+        {% if p.price_source == 'seller' %}<span class="badge seller">price set by you</span>{% endif %}
+      </div>
+      {% if p.match_note %}<p class="hint" style="margin-top:6px">{{ p.match_note }}</p>{% endif %}
     </div>
   </div>
   {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
   <form method="post" action="/r/{{ run.review_token }}/products/{{ p.id }}"
         hx-post="/r/{{ run.review_token }}/products/{{ p.id }}" hx-target="#product-{{ p.id }}" hx-swap="outerHTML">
-    <label>Brand <input name="brand" value="{{ p.brand or '' }}" maxlength="120"></label>
-    <label>Product <input name="name" value="{{ p.name or '' }}" maxlength="120"></label>
-    <label>Size <input name="size" value="{{ p.size or '' }}" maxlength="120"></label>
-    <label>Price (GH₵) <input name="price" value="{{ p.price_pesewas|cedis_input }}" inputmode="decimal" placeholder="e.g. 12.50"></label>
-    <button type="submit" name="approve" value="1">{% if p.status == 'approved' %}Save{% else %}Save &amp; approve{% endif %}</button>
-    <button type="submit" class="secondary">Save as draft</button>
+    <div class="fields">
+      <label>Brand <input name="brand" value="{{ p.brand or '' }}" maxlength="120"></label>
+      <label>Size <input name="size" value="{{ p.size or '' }}" maxlength="120"></label>
+      <label class="wide">Product <input name="name" value="{{ p.name or '' }}" maxlength="120"></label>
+      <label class="wide price-input">Price (GH₵) <input name="price" value="{{ p.price_pesewas|cedis_input }}" inputmode="decimal" placeholder="e.g. 12.50"></label>
+    </div>
+    <div class="form-actions">
+      <button type="submit" name="approve" value="1">{% if p.status == 'approved' %}Save{% else %}Save &amp; approve{% endif %}</button>
+      <button type="submit" class="secondary">Save as draft</button>
+    </div>
   </form>
   {% if suggestions and p.price_source != 'seller' and p.match_status != 'auto' %}
   <div class="suggestions">
-    <p class="hint">Prices heard around when this product was on screen:</p>
-    {% for s in suggestions[:3] %}
+    <p class="hint">Prices heard in your video. Tap the right one, or type it above:</p>
+    <div class="chips">
+    {% for s in suggestions %}
     <form method="post" action="/r/{{ run.review_token }}/products/{{ p.id }}/suggestion"
           hx-post="/r/{{ run.review_token }}/products/{{ p.id }}/suggestion" hx-target="#product-{{ p.id }}" hx-swap="outerHTML">
       <input type="hidden" name="mention_id" value="{{ s.id }}">
-      <button type="submit" class="chip">“{{ s.text }}” → {{ s.amount_pesewas|cedis }}</button>
+      <button type="submit" class="chip"><span>“{{ s.referent or s.text }}”</span><b>{{ s.amount_pesewas|cedis }}</b></button>
     </form>
     {% endfor %}
+    </div>
   </div>
   {% endif %}
   <div class="actions">

@@ -1,5 +1,8 @@
+from PIL import Image
+
 from app.fixtures import FIXTURE_MENTIONS, FIXTURE_TRACKS, FPS, FRAME_H, FRAME_W, fixture_tracks
 from app.models.types import FrameHit, PriceMention, RankedCandidate, Track
+from app.pipeline.keyframes import ranked_frames
 from app.pipeline.associate import associate, candidates_for, is_identifiable, mention_window, name_similarity
 
 NAMES = {tid: name for tid, _b, name, *_ in FIXTURE_TRACKS}
@@ -89,3 +92,13 @@ def test_only_empty_low_confidence_tracks_are_filtered():
     assert is_identifiable(None, "Baby Wipes", 0.1)
     assert is_identifiable(None, None, 0.8)      # unreadable real product: seller still sees it
     assert is_identifiable(None, None, None)     # no evidence either way: never drop silently
+
+
+def test_photo_frame_avoids_obstruction_and_edges(tmp_path):
+    img = tmp_path / "f.jpg"
+    Image.effect_noise((200, 200), 80).convert("RGB").save(img)
+    box = (50, 50, 150, 150)
+    track = Track("a", "a", [FrameHit(0, 0.0, box), FrameHit(1, 0.5, box), FrameHit(2, 1.0, (0, 50, 100, 150))])
+    ranked = ranked_frames(track, lambda i: img, {0: [(50, 50, 120, 150)]})
+    assert [h.frame_idx for h, _ in ranked][0] == 1           # clear view wins over a covered one
+    assert ranked[-1][0].frame_idx in (0, 2)                  # covered or edge-touching ranks last

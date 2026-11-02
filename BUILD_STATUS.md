@@ -59,7 +59,7 @@ Spark's cost and vary by run. Raw sanitised responses are in the gitignored `run
 
 1. Create the public repo. Push `main` only, never `--all` or `--mirror`, then check it in a logged-out browser.
 2. Hosting: not built. Vercel and Netlify do not fit (ffmpeg, long runs, stored files). Fly.io is recommended, subject to
-   its pricing. Any public server must set `STS_UPLOAD_CODE`.
+   its pricing. Paid runs are refused until `STS_UPLOAD_CODE` is set, and stop for the day at `STS_MAX_DAILY_USD`.
 3. Record the 3-minute demo. It must clearly show what was built during the event.
 4. Submit on the CV platform by 4 Nov, 9:00 PM ET, and list everyone who worked on it.
 
@@ -80,8 +80,7 @@ Spark's cost and vary by run. Raw sanitised responses are in the gitignored `run
 - Identical items become separate listings. Keyword hints to transcription are untested. Muse Image is not built.
 - Word lists, cut-offs and thresholds are tuned on one clip.
 - Review links are bearer URLs with no login or CSRF token. Demo only.
-- A server restart during a run leaves that run marked as processing.
 
 ## Local setup
 
-Python 3.12 venv at `~/.venvs/stall-to-store`; ffmpeg/ffprobe on `PATH`; 138 tests pass.
+Python 3.12 venv at `~/.venvs/stall-to-store`; ffmpeg/ffprobe on `PATH`; 150 tests pass.

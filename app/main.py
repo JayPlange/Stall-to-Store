@@ -1,20 +1,21 @@
 """FastAPI app factory. Run: uvicorn app.main:create_app --factory"""
 import logging
 import secrets
-import threading
 import time
 from collections.abc import Iterator
 
 from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import Settings, get_settings
 from app.db import connect, init_db
 from app.logging_setup import configure_logging
-from app.pipeline.orchestrate import run_pipeline
+from app.pipeline.orchestrate import make_starter, recover_interrupted
 from app.web import routes
 
 log = logging.getLogger("sts.http")
+FORM_OVERHEAD = 1_000_000
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -23,12 +24,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings.runs_dir.mkdir(parents=True, exist_ok=True)
     conn = connect(settings.db_path)
     init_db(conn)
+    recover_interrupted(conn)
     conn.close()
 
     app = FastAPI(title="Stall to Store", docs_url=None, redoc_url=None)
     app.state.settings = settings
-    app.state.start_pipeline = lambda run_id: threading.Thread(
-        target=run_pipeline, args=(run_id, settings), daemon=True).start()
+    app.state.start_pipeline = make_starter(settings)
 
     def get_conn() -> Iterator:
         c = connect(settings.db_path)
@@ -41,6 +42,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
+        if request.method == "POST":
+            # Reject before the form is parsed: the parser would otherwise store the whole body first.
+            size = request.headers.get("content-length")
+            if size is None and request.url.path == "/runs":
+                return PlainTextResponse("Please upload a file from the form.", status_code=411)
+            if size is not None and (not size.isdigit() or int(size) > settings.max_upload_bytes + FORM_OVERHEAD):
+                return PlainTextResponse(f"Videos can be up to {settings.max_upload_mb} MB.", status_code=413)
         request_id = secrets.token_hex(6)
         started = time.monotonic()
         response = await call_next(request)

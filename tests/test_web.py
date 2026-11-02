@@ -13,7 +13,7 @@ from tests.conftest import needs_ffmpeg
 
 
 def _token(resp) -> str:
-    return re.search(r"/r/([A-Za-z0-9_\-]+)/", resp.text).group(1)
+    return re.search(r"/r/([A-Za-z0-9_\-]+)", resp.text).group(1)
 
 
 def test_health_reports_names_not_values(client):
@@ -191,3 +191,19 @@ def test_upload_code_blocks_strangers(settings, tmp_path):
     assert r.status_code == 403 and not list(settings.runs_dir.iterdir())
     r = c.post("/runs", files={"video": ("a.mp4", b"x", "video/mp4")}, data={"access_code": "market-2026"})
     assert r.status_code == 400  # passes the code, then fails normal validation
+
+
+def test_oversized_upload_is_refused_before_the_body_is_read(client):
+    r = client.post("/runs", content=b"x" * 10, headers={"Content-Length": str(50 * 1024 * 1024),
+                                                         "Content-Type": "multipart/form-data; boundary=X"})
+    assert r.status_code == 413
+
+
+def test_upload_works_from_a_phone_gallery(client):
+    page = client.get("/").text
+    assert "capture=" not in page and 'id="upload-form"' in page
+
+
+def test_review_page_offers_a_way_to_save_the_link(fixture_client):
+    r = fixture_client.post("/dev/fixture")
+    assert "Send it to my WhatsApp" in r.text and "Copy link" in r.text

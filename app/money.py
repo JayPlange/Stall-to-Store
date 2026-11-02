@@ -9,7 +9,7 @@ class PriceError(ValueError):
     pass
 
 
-_STRIP = re.compile(r"(?i)\s|gh₵|ghs|gh¢|ghc|₵|¢|cedis?|,")
+_STRIP = re.compile(r"(?i)\s|gh₵|ghs|gh¢|ghc|₵|¢|cedis?")
 
 
 def parse_cedis(value: str | int | None) -> int:
@@ -19,6 +19,9 @@ def parse_cedis(value: str | int | None) -> int:
     text = _STRIP.sub("", str(value))
     if not text:
         raise PriceError("price is required")
+    if re.search(r",\d{1,2}$", text):  # "12,50" must never become 1250 cedis
+        raise PriceError("use a dot for pesewas, for example 12.50")
+    text = text.replace(",", "")
     if not re.fullmatch(r"\d+(\.\d{1,2})?", text):
         raise PriceError("price must be a number of cedis with at most 2 decimals")
     try:

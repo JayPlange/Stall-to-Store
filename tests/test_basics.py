@@ -14,7 +14,7 @@ def test_parse_cedis(text, expected):
     assert parse_cedis(text) == expected
 
 
-@pytest.mark.parametrize("text", ["", "0", "-3", "12.345", "abc", "1e3", None, "99999999"])
+@pytest.mark.parametrize("text", ["", "0", "-3", "12.345", "abc", "1e3", None, "99999999", "12,50", "12,5", "GH₵ 12,50", "1.200,00"])
 def test_parse_cedis_rejects(text):
     with pytest.raises(PriceError):
         parse_cedis(text)

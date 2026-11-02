@@ -13,14 +13,16 @@
 </section>
 
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-<form class="card" method="post" action="/runs" enctype="multipart/form-data">
+<p class="notice" id="back-to-shop" hidden>Already uploaded? <a href="#">Go back to your review page</a></p>
+<form class="card" id="upload-form" method="post" action="/runs" enctype="multipart/form-data" data-max-mb="{{ settings.max_upload_mb }}">
   <h2>Upload your stall video</h2>
   <label for="video">Video, {{ settings.min_duration_s|int }} to {{ settings.max_duration_s|int }} seconds, up to {{ settings.max_upload_mb }} MB</label>
-  <input id="video" name="video" type="file" accept="video/*" capture="environment" required>
+  <input id="video" name="video" type="file" accept="video/*" required>
   <p class="hint" style="margin:8px 0 12px">Film products and your hands only, not faces.</p>
   {% if settings.upload_code %}<label for="access_code">Access code</label>
   <input id="access_code" name="access_code" type="password" autocomplete="off" required style="margin-bottom:12px">{% endif %}
-  <button type="submit">Upload video</button>
+  <p class="error" id="upload-error" role="alert" hidden></p>
+  <button type="submit" id="upload-button">Upload video</button>
 </form>
 {% if settings.dev_fixtures %}
 <form class="card" method="post" action="/dev/fixture" style="margin-top:14px;border-style:dashed">
@@ -28,4 +30,33 @@
   <button type="submit" class="secondary" style="margin-top:10px">Load development fixture</button>
 </form>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem("sts-review-link");
+      if (saved && saved.indexOf("/r/") === 0) {
+        var box = document.getElementById("back-to-shop");
+        box.querySelector("a").href = saved;
+        box.hidden = false;
+      }
+    } catch (e) {}
+    var form = document.getElementById("upload-form");
+    form.addEventListener("submit", function (e) {
+      var file = document.getElementById("video").files[0];
+      var max = Number(form.dataset.maxMb);
+      var error = document.getElementById("upload-error");
+      if (file && file.size > max * 1024 * 1024) {
+        e.preventDefault();
+        error.textContent = "This video is larger than " + max + " MB. Please film a shorter clip.";
+        error.hidden = false;
+        return;
+      }
+      var button = document.getElementById("upload-button");
+      button.disabled = true;
+      button.textContent = "Uploading your video. Keep this page open...";
+    });
+  })();
+</script>
 {% endblock %}

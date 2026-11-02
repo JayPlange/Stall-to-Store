@@ -30,7 +30,8 @@ class Settings(BaseSettings):
     ffprobe_bin: str = "ffprobe"
 
     dev_fixtures: bool = False
-    upload_code: SecretStr | None = None  # when set, uploads require it, so strangers cannot spend credits
+    upload_code: SecretStr | None = None  # paid runs are refused until this is set
+    max_daily_usd: float = 5.0
     proposal_ttl_minutes: int = 15
     click_to_chat_ttl_minutes: int = 1440
     max_order_lines: int = 30

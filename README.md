@@ -67,7 +67,7 @@ Uploading a video runs every stage in the background, with a progress screen. Th
 python -m app.pipeline.cli transcribe <run_id> --live
 ```
 
-The `overlay` stage draws SAM's real tracking over the footage for the review page. Live stages need `STS_ALLOW_LIVE_MODEL_CALLS=true` and `MODEL_API_KEY`. Every call is logged to `model_calls`,
+The `overlay` stage draws SAM's real tracking over the footage for the review page. Paid runs from the app need `STS_UPLOAD_CODE` to be set, and stop for the day at `STS_MAX_DAILY_USD`. Live stages need `STS_ALLOW_LIVE_MODEL_CALLS=true` and `MODEL_API_KEY`. Every call is logged to `model_calls`,
 and its sanitised raw response is saved under `runs/{run_id}/raw/`. Calls are never retried automatically.
 
 ## Project status

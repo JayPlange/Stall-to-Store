@@ -8,6 +8,16 @@
   <h1>{% if run.status == 'processing' %}Your video is in good hands.{% else %}Check it. Then go live.{% endif %}</h1>
   <p>{% if run.status == 'processing' %}We are building a draft shop from your video. You will have the final say: nothing reaches customers until you approve it.{% else %}We built this draft from your video. You have the final say: nothing reaches customers until you approve it.{% endif %}</p>
 </section>
+<section class="card keep-link">
+  <h2>Save your private link</h2>
+  <p class="hint">This link is the only way back to your shop's review page and orders. Keep it safe, and do not share it.</p>
+  <div class="form-actions">
+    {% set link_text = 'My private Stall to Store link: ' ~ request.url %}
+    <a class="button whatsapp-small" target="_blank" rel="noopener noreferrer"
+       href="https://wa.me/{{ shop.seller_whatsapp if shop else '' }}?text={{ link_text|urlencode }}">Send it to my WhatsApp</a>
+    <button type="button" class="secondary" id="copy-link">Copy link</button>
+  </div>
+</section>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
 
@@ -34,7 +44,7 @@
   {% if not products and run.source == 'real' %}
   {% if run.status == 'processing' %}
   <h2 style="margin-top:8px">Working on your video</h2>
-  <p class="hint">Your draft is usually ready in about 3 minutes. The photos and tracking video finish a little later.</p>
+  <p class="hint">{% if run.stage %}Your draft is usually ready in about 3 minutes. The photos and tracking video finish a little later.{% else %}Your video is in the queue and will start soon.{% endif %}</p>
   <ol class="steps-list">{% for step in steps %}<li class="{{ step.state }}">{{ step.label }}</li>{% endfor %}</ol>
   {% elif run.status in ('draft_ready', 'published') %}
   <p style="margin-top:8px">We could not find any products in this video. Try filming closer, with labels facing the camera.</p>
@@ -90,6 +100,11 @@
 {% endblock %}
 {% block scripts %}
 <script>
+  try { localStorage.setItem("sts-review-link", location.pathname); } catch (e) {}
+  document.getElementById("copy-link").addEventListener("click", function () {
+    var button = this;
+    navigator.clipboard.writeText(location.href).then(function () { button.textContent = "Copied"; });
+  });
   document.body.addEventListener("htmx:afterSwap", function () {
     var box = document.getElementById("progress");
     if (!box) return;

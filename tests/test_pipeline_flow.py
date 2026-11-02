@@ -1,6 +1,7 @@
 """Whole-pipeline flow with MOCKED provider responses. Proves wiring and safety, not model accuracy."""
 import json
 import re
+import time
 
 import httpx
 import pytest
@@ -10,11 +11,11 @@ from pydantic import SecretStr
 
 from app.catalogue import create_run, get_run, list_products, set_run_status
 from app.artefacts import new_run_id, run_dir
-from app.db import connect
+from app.db import connect, iso, utcnow
 from app.main import create_app
 from app.models.base import MetaClient
 from app.pipeline.ingest import ingest
-from app.pipeline.orchestrate import run_pipeline, step_states
+from app.pipeline.orchestrate import MAX_ATTEMPTS, can_process, make_starter, run_pipeline, step_states
 from tests.conftest import needs_ffmpeg
 
 W, H = 4, 3
@@ -48,7 +49,8 @@ def respond(calls, fail=None):
 
 @pytest.fixture
 def live_settings(settings):
-    return settings.model_copy(update={"allow_live_model_calls": True, "model_api_key": SecretStr("k-test")})
+    return settings.model_copy(update={"allow_live_model_calls": True, "model_api_key": SecretStr("k-test"),
+                                       "upload_code": SecretStr("market-code")})
 
 
 @pytest.fixture
@@ -109,7 +111,8 @@ def test_upload_starts_processing_only_when_live_calls_are_on(settings, live_set
     c.post("/runs", files={"video": ("a.mp4", sample_video.read_bytes(), "video/mp4")})
     assert started == []
     c = _app(live_settings, started)
-    r = c.post("/runs", files={"video": ("a.mp4", sample_video.read_bytes(), "video/mp4")})
+    r = c.post("/runs", files={"video": ("a.mp4", sample_video.read_bytes(), "video/mp4")},
+               data={"access_code": "market-code"})
     assert len(started) == 1 and "Working on your video" in r.text and 'http-equiv="refresh"' in r.text
 
 
@@ -154,3 +157,55 @@ def test_page_stops_refreshing_once_a_draft_exists(live_settings, conn):
     set_run_status(conn, run["id"], "draft_ready", "overlay")
     r = _app(live_settings, []).get(f"/r/{run['review_token']}")
     assert 'http-equiv="refresh"' not in r.text
+
+
+def test_paid_runs_need_an_access_code(live_settings):
+    open_server = live_settings.model_copy(update={"upload_code": None})
+    assert can_process(live_settings) and not can_process(open_server)
+
+
+def _log_call(conn, run_id, stage, cost):
+    conn.execute("INSERT INTO model_calls(run_id, stage, model, provider, endpoint, ok, cost_usd, created_at)"
+                 " VALUES (?,?,?,?,?,?,?,?)", (run_id, stage, "m", "meta", "/x", 1, cost, iso(utcnow())))
+    conn.commit()
+
+
+def test_daily_budget_stops_new_runs(live_settings, conn):
+    run = create_run(conn, "real")
+    set_run_status(conn, run["id"], "ingested", "ingest")
+    _log_call(conn, None, "other", live_settings.max_daily_usd)
+    started = []
+    r = _app(live_settings, started).post(f"/r/{run['review_token']}/process")
+    assert r.status_code == 429 and "budget" in r.text and started == []
+
+
+def test_a_failed_video_cannot_be_retried_forever(live_settings, conn):
+    run = create_run(conn, "real")
+    set_run_status(conn, run["id"], "failed", "identify", "x")
+    for _ in range(MAX_ATTEMPTS):
+        _log_call(conn, run["id"], "transcribe", 0.01)
+    started = []
+    r = _app(live_settings, started).post(f"/r/{run['review_token']}/process")
+    assert r.status_code == 429 and started == []
+
+
+def test_restart_releases_a_stuck_run(settings, conn):
+    run = create_run(conn, "real")
+    set_run_status(conn, run["id"], "processing", "track")
+    create_app(settings)
+    after = get_run(conn, run["id"])
+    assert after["status"] == "failed" and "restarted" in after["error"]
+
+
+def test_real_background_process_runs_and_reports(live_settings, conn):
+    """A real worker process, with paid calls off, so it stops at the first paid stage without any spending."""
+    run = create_run(conn, "real")
+    set_run_status(conn, run["id"], "processing", None)
+    off = live_settings.model_copy(update={"allow_live_model_calls": False})
+    make_starter(off)(run["id"])
+    deadline = time.monotonic() + 60
+    while get_run(conn, run["id"])["status"] == "processing" and time.monotonic() < deadline:
+        time.sleep(0.2)
+    final = get_run(conn, run["id"])
+    assert final["status"] == "failed" and final["stage"] == "transcribe"
+    assert conn.execute("SELECT COUNT(*) FROM model_calls").fetchone()[0] == 0

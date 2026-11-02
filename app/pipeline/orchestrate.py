@@ -5,10 +5,12 @@ cannot keep spending. Optional stages only add quality, so a draft survives with
 """
 import logging
 from collections.abc import Callable
+from concurrent.futures import BrokenExecutor, ProcessPoolExecutor
 
 from app import catalogue
 from app.config import Settings
-from app.db import connect, init_db
+from app.db import connect, init_db, iso, utcnow
+from app.logging_setup import configure_logging
 from app.models.base import MetaClient, ProviderError
 from app.pipeline.stages import run_stage
 
@@ -21,10 +23,60 @@ STEPS = [("transcribe", "Listening to your narration"), ("prices", "Picking out 
          ("overlay", "Making your tracking video")]
 OPTIONAL = {"link", "cutouts", "overlay"}
 ESTIMATED_COST_USD = 0.13
+MAX_ATTEMPTS = 2
 
 
 def can_process(s: Settings) -> bool:
-    return s.allow_live_model_calls and s.api_key_present
+    """Paid runs need an access code, so a public server can never spend credits by accident."""
+    return s.allow_live_model_calls and s.api_key_present and bool(s.upload_code)
+
+
+def processing_block(conn, s: Settings, run_id: str) -> str | None:
+    """Why this run must not spend money right now, or None if it may."""
+    spent = conn.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM model_calls WHERE created_at LIKE ?",
+                         (iso(utcnow())[:10] + "%",)).fetchone()[0]
+    if spent + ESTIMATED_COST_USD > s.max_daily_usd:
+        return "Today's AI budget has been reached. Please try again tomorrow."
+    tries = conn.execute("SELECT COUNT(*) FROM model_calls WHERE run_id = ? AND stage = 'transcribe'",
+                         (run_id,)).fetchone()[0]
+    if tries >= MAX_ATTEMPTS:
+        return "This video has been tried too many times. Please upload it again."
+    return None
+
+
+def recover_interrupted(conn) -> int:
+    """A restart kills any run in progress. Mark those failed so they are not stuck forever."""
+    count = conn.execute("UPDATE runs SET status = 'failed', error = 'The server restarted. Please try again.'"
+                         " WHERE status = 'processing'").rowcount
+    conn.commit()
+    return count
+
+
+def make_starter(s: Settings) -> Callable[[str], None]:
+    """Run videos one at a time in a separate process, because CPU work here would stall the website."""
+    pool: list[ProcessPoolExecutor] = []
+
+    def finished(run_id: str, future) -> None:
+        if future.exception() is None:
+            return
+        log.error("pipeline process failed", extra={"ctx": {"run_id": run_id}})
+        conn = connect(s.db_path)
+        try:
+            catalogue.set_run_status(conn, run_id, "failed", None, "Processing stopped unexpectedly. Please try again.")
+        finally:
+            conn.close()
+
+    def start(run_id: str) -> None:
+        if not pool:
+            pool.append(ProcessPoolExecutor(max_workers=1))
+        try:
+            future = pool[0].submit(run_pipeline, run_id, s)
+        except BrokenExecutor:
+            pool[0] = ProcessPoolExecutor(max_workers=1)
+            future = pool[0].submit(run_pipeline, run_id, s)
+        future.add_done_callback(lambda f: finished(run_id, f))
+
+    return start
 
 
 def step_states(run: dict) -> list[dict]:
@@ -42,7 +94,8 @@ def _mark(conn, run_id: str, stage: str) -> None:
 
 
 def run_pipeline(run_id: str, s: Settings, client_factory: Callable | None = None) -> bool:
-    """Returns True when a draft exists. Runs on a background thread, so it opens its own connection."""
+    """Returns True when a draft exists. Runs in its own process, so it opens its own connection."""
+    configure_logging()
     conn = connect(s.db_path)
     init_db(conn)
     try:

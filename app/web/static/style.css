@@ -58,6 +58,9 @@ button:active, .button:active { transform: translateY(1px); }
 button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 button.secondary:hover { background: var(--paper); }
 .button.whatsapp { background: #1ea952; font-size: 1.06rem; width: 100%; }
+.button.whatsapp-small { background: #1ea952; }
+.button.whatsapp-small:hover { background: #178a43; }
+.keep-link { margin-bottom: 16px; }
 .button.whatsapp:hover { background: #178a43; }
 
 .error { background: var(--clay-soft); color: #8d2f12; font-weight: 600; border-radius: 12px; padding: 10px 14px; margin: 10px 0; }

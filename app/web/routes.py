@@ -22,7 +22,7 @@ from app.money import cedis_input_value, format_cedis
 from app.orders import service as orders
 from app.orders.links import order_message, wa_link
 from app.pipeline.ingest import IngestError, ingest, tools_available
-from app.pipeline.orchestrate import ESTIMATED_COST_USD, can_process, step_states
+from app.pipeline.orchestrate import ESTIMATED_COST_USD, can_process, processing_block, step_states
 from app.pipeline.uploads import UploadError, accept_upload
 
 log = logging.getLogger("sts.web")
@@ -99,6 +99,8 @@ def upload(request: Request, video: UploadFile = File(...), access_code: str = F
 
 def _begin_processing(request: Request, conn, run_id: str) -> bool:
     """Claim the run atomically, so a double click can never start (and bill) it twice."""
+    if processing_block(conn, settings_of(request), run_id):
+        return False
     claimed = conn.execute("UPDATE runs SET status = 'processing', stage = NULL, error = NULL"
                            " WHERE id = ? AND status IN ('ingested', 'failed') AND source = 'real'"
                            " AND NOT EXISTS (SELECT 1 FROM products WHERE run_id = ?)", (run_id, run_id)).rowcount
@@ -219,6 +221,9 @@ def process_video(request: Request, token: str, conn: sqlite3.Connection = Depen
     run = _run_or_404(conn, token)
     if not can_process(settings_of(request)):
         return _review_response(request, conn, run, error="AI processing is switched off on this server.", status_code=400)
+    reason = processing_block(conn, settings_of(request), run["id"])
+    if reason:
+        return _review_response(request, conn, run, error=reason, status_code=429)
     _begin_processing(request, conn, run["id"])
     return RedirectResponse(f"/r/{token}", status_code=303)
 

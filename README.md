@@ -37,6 +37,15 @@ Open http://127.0.0.1:8000. To try the review screen and shop without model acce
 `STS_DEV_FIXTURES=true`. The "Load development fixture" button then creates a hand-written fixture run,
 shown with a red **DEVELOPMENT FIXTURE** banner on every page.
 
+To run the real Meta models on your own video, set all three in `.env`, then restart the app:
+
+- `MODEL_API_KEY`: your Meta Model API key
+- `STS_ALLOW_LIVE_MODEL_CALLS=true`
+- `STS_UPLOAD_CODE`: any word you choose; the upload form asks for it, so strangers cannot spend your credits
+
+Each video costs about $0.11 in API credits. New paid runs stop once the day's estimated spend reaches
+`STS_MAX_DAILY_USD` (default $5).
+
 Tests (no network, no API key, no paid calls):
 
 ```bash

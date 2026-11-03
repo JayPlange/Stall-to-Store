@@ -15,7 +15,8 @@ copied from earlier projects, and the commit history shows the work as it happen
 - Seller review, the shop page, and WhatsApp click-to-chat ordering with price and order safeguards
 - The tracking video, the evaluation script, and the test suite
 
-The only outside code is the open-source libraries in `requirements.txt`, including Meta's `meta-sam-parser`.
+The only outside code is the open-source libraries in `requirements.txt`, including Meta's `meta-sam-parser`,
+and the htmx script in `app/web/static/vendor/` (0BSD licence).
 See [SPEC.md](SPEC.md) for the design and [BUILD_STATUS.md](BUILD_STATUS.md) for current results.
 
 ## Run it
@@ -107,6 +108,37 @@ agent (Muse Glimmer or Muse Spark).
 
 The development fixture is hand-written test data and is never model output. No result in this repository
 is presented as model output unless it came from a logged live call.
+
+## How the Meta models work together
+
+The hard part is not calling three APIs. It is linking a price the seller **said** to the product they were
+**showing**, when the speech has no timing and brand names are misheard.
+
+1. **SAM 3.1** finds every product in the video and follows it from frame to frame, with a mask for each one.
+   Two searches, "product package" and "bottle", catch boxes, packets and bottles.
+2. **Muse Voice Transcribe** turns the seller's narration into text.
+3. **Muse Spark** does three jobs: it picks every price out of the narration, reads each product's brand and name
+   from SAM's cut-out photos, and looks at a numbered sheet of those photos together with the narration to decide
+   which price belongs to which product.
+4. The app checks everything, refuses to invent amounts, and hands anything uncertain to the seller.
+
+Example from our real video: the seller said "Allianz kettle", which was misheard. The box says AILYONS. Muse Spark
+matched the GH₵300 to the right product anyway, and gave its reason: the words sound alike and it was the only
+kettle shown.
+
+**Real calls to Meta's API** (from the app's call log; costs are estimates from Meta's published prices):
+
+| Model | Calls (all succeeded) | Typical time per call | Estimated cost | What it did |
+|---|---|---|---|---|
+| SAM 3.1 (`sam-3.1`) | 8 | about 14 s | $0.22 | Found and tracked products in the video |
+| Muse Voice Transcribe (`muse-voice-transcribe-1.0`) | 5 | about 18 s | $0.01 | Transcribed the narration |
+| Muse Spark (`muse-spark-1.3`) | 17 | about 15 s | $0.23 | Read prices, named products, matched prices to products |
+
+That is 31 calls in total, including 1 model-list check, for about $0.46. One full video makes 7 calls, about $0.11.
+
+**Latest automatic run on the real video:** 7 calls, 9 product cards, every price correct, draft ready in about
+2 minutes, everything finished in about 8 minutes. Muse Spark has matched every spoken price correctly on all four
+runs where it did the matching. That is still one video, so treat it as a first result, not measured accuracy.
 
 ## Evaluation
 

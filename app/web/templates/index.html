@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="hero">
-  <p class="eyebrow">For market sellers</p>
+  <p class="eyebrow">Seller area</p>
   <h1>Film your stall. Get a shop.</h1>
   <p>Walk past your products and say each price out loud. Stall to Store turns that one video into a shop page your customers can order from on WhatsApp.</p>
 </section>
@@ -13,7 +13,7 @@
 </section>
 
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-<p class="notice" id="back-to-shop" hidden>Already uploaded? <a href="#">Go back to your review page</a></p>
+<p class="notice" id="back-to-shop" hidden>Already uploaded? <a href="#">Go back to your seller page</a></p>
 <form class="card" id="upload-form" method="post" action="/runs" enctype="multipart/form-data" data-max-mb="{{ settings.max_upload_mb }}">
   <h2>Upload your stall video</h2>
   <label for="video">Video, {{ settings.min_duration_s|int }} to {{ settings.max_duration_s|int }} seconds, up to {{ settings.max_upload_mb }} MB</label>

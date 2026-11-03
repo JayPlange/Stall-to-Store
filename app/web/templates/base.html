@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=8">
-  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+  <link rel="stylesheet" href="/static/style.css?v=9">
+  <script src="/static/vendor/htmx.min.js?v=2.0.4" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -16,7 +16,7 @@
   <div class="fixture-banner" role="alert">DEVELOPMENT FIXTURE: hand-written test data, not model output and not a real shop.</div>
   {% endif %}
   <div class="woven" aria-hidden="true"></div>
-  {% block topbar %}<header class="topbar"><a class="brand" href="/">Stall <span>to</span> Store</a>{% block topnote %}{% endblock %}</header>{% endblock %}
+  {% block topbar %}<header class="topbar"><a class="brand" href="/seller">Stall <span>to</span> Store</a>{% block topnote %}{% endblock %}</header>{% endblock %}
   <main>{% block content %}{% endblock %}</main>
   {% block scripts %}{% endblock %}
 </body>

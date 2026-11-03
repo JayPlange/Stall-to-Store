@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     ffprobe_bin: str = "ffprobe"
 
     dev_fixtures: bool = False
+    home_shop: str | None = None  # shop shown at /; default is the newest published real shop
     upload_code: SecretStr | None = None  # paid runs are refused until this is set
     max_daily_usd: float = 5.0
     proposal_ttl_minutes: int = 15

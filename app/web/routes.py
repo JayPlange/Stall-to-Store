@@ -65,8 +65,26 @@ def health(request: Request, conn: sqlite3.Connection = Depends(conn_dep)):
 
 
 # -- upload ---------------------------------------------------------------
+def _home_shop(conn, s: Settings) -> dict | None:
+    if s.home_shop:
+        return catalogue.get_shop_by_slug(conn, s.home_shop)
+    row = conn.execute("SELECT s.*, r.source FROM shops s JOIN runs r ON r.id = s.run_id"
+                       " WHERE s.published_at IS NOT NULL AND r.source = 'real'"
+                       " ORDER BY s.published_at DESC LIMIT 1").fetchone()
+    return dict(row) if row else None
+
+
 @router.get("/", response_class=HTMLResponse)
-def index(request: Request):
+def home(request: Request, conn: sqlite3.Connection = Depends(conn_dep)):
+    """Customers land on the shop. With no published shop yet, the seller area is the front door."""
+    shop = _home_shop(conn, settings_of(request))
+    if shop:
+        return _render_shop(request, conn, shop)
+    return seller_home(request)
+
+
+@router.get("/seller", response_class=HTMLResponse)
+def seller_home(request: Request):
     return templates.TemplateResponse(request, "index.html", {"settings": settings_of(request), "error": None})
 
 
@@ -296,9 +314,12 @@ def _shop_or_404(conn, slug: str) -> dict:
 
 @router.get("/s/{slug}", response_class=HTMLResponse)
 def shop_page(request: Request, slug: str, conn: sqlite3.Connection = Depends(conn_dep)):
-    shop = _shop_or_404(conn, slug)
+    return _render_shop(request, conn, _shop_or_404(conn, slug))
+
+
+def _render_shop(request: Request, conn, shop: dict, error: str | None = None, status_code: int = 200):
     return templates.TemplateResponse(request, "shop.html", {"shop": shop, "products": catalogue.shop_products(conn, shop),
-                                                             "error": None})
+                                                             "error": error}, status_code=status_code)
 
 
 @router.post("/s/{slug}/order", response_class=HTMLResponse)
@@ -314,8 +335,7 @@ async def shop_order(request: Request, slug: str, conn: sqlite3.Connection = Dep
         order = orders.propose_order(conn, shop, lines, ttl_minutes=s.click_to_chat_ttl_minutes,
                                      max_lines=s.max_order_lines, max_qty=s.max_line_quantity)
     except orders.OrderError as exc:
-        return templates.TemplateResponse(request, "shop.html", {
-            "shop": shop, "products": catalogue.shop_products(conn, shop), "error": str(exc)}, status_code=400)
+        return _render_shop(request, conn, shop, str(exc), 400)
     link = wa_link(shop["seller_whatsapp"], order_message(shop, order))
     return templates.TemplateResponse(request, "order.html", {"shop": shop, "order": order, "wa_link": link})
 

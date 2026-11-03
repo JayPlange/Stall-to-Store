@@ -18,6 +18,8 @@ p { margin: 0; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; max-width: 1080px; margin: 0 auto; padding: 14px 16px; }
 .brand { font-family: var(--display); font-weight: 800; font-size: 1.15rem; color: var(--forest-deep); text-decoration: none; }
 .brand span { color: var(--clay); }
+.seller-link { font-weight: 700; color: var(--forest-deep); text-decoration: none; border: 1px solid var(--line); border-radius: 99px; padding: 7px 16px; background: var(--card); }
+.seller-link:hover { background: var(--gold-soft); }
 .topbar-note { color: var(--ink-soft); font-size: .84rem; }
 main { max-width: 1080px; margin: 0 auto; padding: 8px 16px 112px; }
 .fixture-banner { background: var(--clay); color: #fff; font-weight: 700; text-align: center; padding: 10px 16px; position: sticky; top: 0; z-index: 20; }

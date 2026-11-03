@@ -207,3 +207,30 @@ def test_upload_works_from_a_phone_gallery(client):
 def test_review_page_offers_a_way_to_save_the_link(fixture_client):
     r = fixture_client.post("/dev/fixture")
     assert "Send it to my WhatsApp" in r.text and "Copy link" in r.text
+
+
+def test_home_is_the_seller_area_until_a_shop_is_published(client):
+    assert 'id="upload-form"' in client.get("/").text
+    assert 'id="upload-form"' in client.get("/seller").text
+
+
+def test_home_shows_the_published_real_shop_with_a_seller_button(settings, conn, published):
+    c = TestClient(create_app(settings))
+    page = c.get("/").text
+    assert "Auntie Ama Provisions" in page and 'href="/seller"' in page and 'id="upload-form"' not in page
+    assert "Save &amp; approve" not in page  # no seller controls on the customer front
+
+
+def test_fixture_shops_never_become_the_home_page(fixture_client):
+    r = fixture_client.post("/dev/fixture")
+    token = _token(r)
+    for pid in re.findall(r'id="product-(\d+)"', r.text)[:2]:
+        fixture_client.post(f"/r/{token}/products/{pid}/status", data={"status": "approved"})
+    fixture_client.post(f"/r/{token}/publish", data={"seller_name": "Fixture", "seller_whatsapp": "+233200000001", "slug": "fixture-shop"})
+    assert 'id="upload-form"' in fixture_client.get("/").text
+
+
+def test_no_third_party_scripts(client):
+    page = client.get("/seller").text
+    assert "unpkg.com" not in page and "/static/vendor/htmx.min.js" in page
+    assert client.get("/static/vendor/htmx.min.js").status_code == 200

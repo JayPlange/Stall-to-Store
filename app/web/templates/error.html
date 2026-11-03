@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }} · Stall to Store{% endblock %}
+{% block topbar %}<header class="topbar"><a class="brand" href="/">Stall <span>to</span> Store</a><a class="seller-link" href="/seller">Seller</a></header>{% endblock %}
+{% block content %}
+<section class="card" style="margin-top:20px">
+  <h1 style="font-size:1.8rem">{{ heading }}</h1>
+  <p style="margin-top:8px">{{ message }}</p>
+  <p style="margin-top:16px"><a class="button" href="/">Go to the shop</a></p>
+</section>
+{% endblock %}

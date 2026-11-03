@@ -234,3 +234,35 @@ def test_no_third_party_scripts(client):
     page = client.get("/seller").text
     assert "unpkg.com" not in page and "/static/vendor/htmx.min.js" in page
     assert client.get("/static/vendor/htmx.min.js").status_code == 200
+
+
+def test_review_page_always_shares_its_own_address(settings, conn, published):
+    c = TestClient(create_app(settings))
+    token = published["run"]["review_token"]
+    r = c.post(f"/r/{token}/publish", data={"seller_name": "Auntie Ama Provisions",
+                                             "seller_whatsapp": "+233 24 000 0000", "slug": "auntie-ama"})
+    assert r.status_code == 200 and "/publish" in str(r.url)
+    shared = re.search(r'href="https://wa\.me/[^"]*text=([^"]+)"', r.text).group(1)
+    assert shared.endswith(f"/r/{token}") and "publish" not in shared
+    assert f'var home = "/r/{token}"' in r.text and "history.replaceState" in r.text
+
+
+def test_live_shop_review_page_says_live_and_links_to_the_shop(settings, conn, published):
+    page = TestClient(create_app(settings)).get(f"/r/{published['run']['review_token']}").text
+    assert "Your shop is open." in page and "Check it. Then go live." not in page
+    assert page.count('href="/s/auntie-ama"') >= 2
+
+
+def test_seller_area_links_back_to_the_shop_once_one_is_live(settings, conn, published):
+    assert "Back to the shop" in TestClient(create_app(settings)).get("/seller").text
+
+
+def test_seller_area_has_no_shop_link_before_any_shop(client):
+    assert "Back to the shop" not in client.get("/seller").text
+
+
+def test_wrong_links_get_a_page_with_a_way_back(client):
+    for r in (client.get("/s/nope"), client.get("/r/not-a-real-token/publish")):
+        assert r.status_code in (404, 405) and "text/html" in r.headers["content-type"]
+        assert 'href="/"' in r.text and "detail" not in r.text
+    assert client.get("/health").json()  # JSON endpoints are unchanged

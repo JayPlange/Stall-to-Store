@@ -5,8 +5,10 @@ import time
 from collections.abc import Iterator
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import Settings, get_settings
 from app.db import connect, init_db
@@ -65,6 +67,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                            "status": response.status_code,
                                            "ms": int((time.monotonic() - started) * 1000)}})
         return response
+
+    @app.exception_handler(StarletteHTTPException)
+    async def friendly_errors(request: Request, exc: StarletteHTTPException):
+        # People reach these by typing or bookmarking a link, so give them a page with a way back.
+        pages = {404: ("Page not found", "This link does not lead to a shop or page. Check the address and try again."),
+                 405: ("Nothing to show here", "This address only works when you press a button on the page."
+                                               " Sellers: open your private link again.")}
+        if exc.status_code not in pages:
+            return await http_exception_handler(request, exc)
+        heading, message = pages[exc.status_code]
+        return routes.templates.TemplateResponse(request, "error.html", {"heading": heading, "message": message},
+                                                 status_code=exc.status_code)
 
     app.mount("/static", StaticFiles(directory=routes.STATIC_DIR), name="static")
     app.include_router(routes.router)

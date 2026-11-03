@@ -80,12 +80,19 @@ def home(request: Request, conn: sqlite3.Connection = Depends(conn_dep)):
     shop = _home_shop(conn, settings_of(request))
     if shop:
         return _render_shop(request, conn, shop)
-    return seller_home(request)
+    return _seller_page(request, conn)
 
 
 @router.get("/seller", response_class=HTMLResponse)
-def seller_home(request: Request):
-    return templates.TemplateResponse(request, "index.html", {"settings": settings_of(request), "error": None})
+def seller_home(request: Request, conn: sqlite3.Connection = Depends(conn_dep)):
+    return _seller_page(request, conn)
+
+
+def _seller_page(request: Request, conn, error: str | None = None, status_code: int = 200):
+    s = settings_of(request)
+    return templates.TemplateResponse(request, "index.html", {"settings": s, "error": error,
+                                                              "has_shop": _home_shop(conn, s) is not None},
+                                      status_code=status_code)
 
 
 @router.post("/runs")
@@ -94,15 +101,13 @@ def upload(request: Request, video: UploadFile = File(...), access_code: str = F
     s = settings_of(request)
     required = s.upload_code.get_secret_value() if s.upload_code else ""
     if required and not hmac.compare_digest(required.encode(), access_code.encode()):
-        return templates.TemplateResponse(request, "index.html", {"settings": s, "error": "That access code is not right."},
-                                          status_code=403)
+        return _seller_page(request, conn, "That access code is not right.", 403)
     run_id = new_run_id()
     rdir = run_dir(s.runs_dir, run_id, create=True)
     try:
         src, meta = accept_upload(video.file, video.filename, rdir, s)
     except UploadError as exc:
-        return templates.TemplateResponse(request, "index.html", {"settings": s, "error": str(exc)},
-                                          status_code=400)
+        return _seller_page(request, conn, str(exc), 400)
     run = catalogue.create_run(conn, "real", run_id, relative_to_runs(s.runs_dir, src))
     try:
         ingest(src, rdir, s.frame_fps, s.ffmpeg_bin, s.ffprobe_bin)

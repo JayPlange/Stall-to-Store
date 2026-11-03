@@ -1,18 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Review your shop · Stall to Store{% endblock %}
 {% block head %}{% if run.status == 'processing' %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
-{% block topnote %}<span class="topbar-note">Keep this link private</span>{% endblock %}
+{% block topnote %}{% if shop and shop.published_at %}<a class="seller-link" href="/s/{{ shop.slug }}">View my shop</a>{% else %}<span class="topbar-note">Keep this link private</span>{% endif %}{% endblock %}
 {% block content %}
+{% set live = shop and shop.published_at %}
 <section class="hero">
-  <p class="eyebrow">Your draft shop</p>
-  <h1>{% if run.status == 'processing' %}Your video is in good hands.{% else %}Check it. Then go live.{% endif %}</h1>
-  <p>{% if run.status == 'processing' %}We are building a draft shop from your video. You will have the final say: nothing reaches customers until you approve it.{% else %}We built this draft from your video. You have the final say: nothing reaches customers until you approve it.{% endif %}</p>
+  <p class="eyebrow">{% if live %}Your shop is live{% else %}Your draft shop{% endif %}</p>
+  <h1>{% if run.status == 'processing' %}Your video is in good hands.{% elif live %}Your shop is open.{% else %}Check it. Then go live.{% endif %}</h1>
+  <p>{% if run.status == 'processing' %}We are building a draft shop from your video. You will have the final say: nothing reaches customers until you approve it.{% elif live %}Customers see only the products you approved. When you save a product here, your shop changes straight away. Your orders are at the bottom of this page.{% else %}We built this draft from your video. You have the final say: nothing reaches customers until you approve it.{% endif %}</p>
+  {% if live %}<p style="margin-top:14px"><a class="button" href="/s/{{ shop.slug }}">View my shop</a></p>{% endif %}
 </section>
 <section class="card keep-link">
   <h2>Save your private link</h2>
   <p class="hint">This link is the only way back to your shop's review page and orders. Keep it safe, and do not share it.</p>
   <div class="form-actions">
-    {% set link_text = 'My private Stall to Store link: ' ~ request.url %}
+    {% set link_text = 'My private Stall to Store link: ' ~ request.base_url ~ 'r/' ~ run.review_token %}
     <a class="button whatsapp-small" target="_blank" rel="noopener noreferrer"
        href="https://wa.me/{{ shop.seller_whatsapp if shop else '' }}?text={{ link_text|urlencode }}">Send it to my WhatsApp</a>
     <button type="button" class="secondary" id="copy-link">Copy link</button>
@@ -100,7 +102,10 @@
 {% endblock %}
 {% block scripts %}
 <script>
-  try { localStorage.setItem("sts-review-link", location.pathname); } catch (e) {}
+  // Buttons on this page post to longer addresses; always keep and share the page's own address.
+  var home = "/r/{{ run.review_token }}";
+  if (location.pathname !== home) history.replaceState(null, "", home);
+  try { localStorage.setItem("sts-review-link", home); } catch (e) {}
   document.getElementById("copy-link").addEventListener("click", function () {
     var button = this;
     navigator.clipboard.writeText(location.href).then(function () { button.textContent = "Copied"; });

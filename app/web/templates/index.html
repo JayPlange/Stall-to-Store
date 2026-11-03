@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block topnote %}{% if has_shop %}<a class="seller-link" href="/">Back to the shop</a>{% endif %}{% endblock %}
 {% block content %}
 <section class="hero">
   <p class="eyebrow">Seller area</p>
@@ -35,10 +36,11 @@
 <script>
   (function () {
     try {
-      var saved = localStorage.getItem("sts-review-link");
-      if (saved && saved.indexOf("/r/") === 0) {
+      // Older pages saved addresses like /r/<token>/publish; keep only the seller page itself.
+      var saved = (localStorage.getItem("sts-review-link") || "").match(/^\/r\/[A-Za-z0-9_-]+/);
+      if (saved) {
         var box = document.getElementById("back-to-shop");
-        box.querySelector("a").href = saved;
+        box.querySelector("a").href = saved[0];
         box.hidden = false;
       }
     } catch (e) {}

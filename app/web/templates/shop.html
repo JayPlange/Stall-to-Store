@@ -63,6 +63,8 @@
       update();
     });
     form.addEventListener("input", update);
+    // After Back, the browser refills the boxes once the page has loaded; recount then too.
+    window.addEventListener("pageshow", update);
     update();
   })();
 </script>

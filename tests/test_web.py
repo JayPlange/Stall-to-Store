@@ -266,3 +266,9 @@ def test_wrong_links_get_a_page_with_a_way_back(client):
         assert r.status_code in (404, 405) and "text/html" in r.headers["content-type"]
         assert 'href="/"' in r.text and "detail" not in r.text
     assert client.get("/health").json()  # JSON endpoints are unchanged
+
+
+def test_publish_button_count_follows_approvals_without_a_reload(settings, conn, published):
+    page = TestClient(create_app(settings)).get(f"/r/{published['run']['review_token']}").text
+    assert 'id="publish-button">Publish 2 approved products' in page
+    assert 'getElementById("publish-button")' in page  # recounted after each htmx save

@@ -80,7 +80,7 @@
     <label>Shop name <input name="seller_name" value="{{ shop.seller_name if shop else '' }}" required maxlength="120"></label>
     <label>WhatsApp number <input name="seller_whatsapp" value="{{ '+' ~ shop.seller_whatsapp if shop else '' }}" inputmode="tel" placeholder="+233 20 000 0001" required></label>
     <label>Shop link /s/<input name="slug" value="{{ shop.slug if shop else '' }}" pattern="[a-z0-9-]{3,40}" required></label>
-    <button type="submit" style="margin-top:14px">Publish {{ counts.approved }} approved product{{ '' if counts.approved == 1 else 's' }}</button>
+    <button type="submit" style="margin-top:14px" id="publish-button">Publish {{ counts.approved }} approved product{{ '' if counts.approved == 1 else 's' }}</button>
   </form>
   {% if shop and shop.published_at %}<p style="margin-top:12px">Live at <a href="/s/{{ shop.slug }}">/s/{{ shop.slug }}</a></p>{% endif %}
 </section>
@@ -139,6 +139,8 @@
     var done = document.querySelectorAll('article.product[data-status="approved"]').length;
     document.getElementById("progress-text").textContent = done + " of " + total + " approved";
     document.getElementById("progress-bar").style.width = Math.round(100 * done / total) + "%";
+    var publish = document.getElementById("publish-button");
+    if (publish) publish.textContent = "Publish " + done + " approved product" + (done === 1 ? "" : "s");
   });
 </script>
 {% endblock %}

@@ -240,3 +240,17 @@ def test_tracking_video_is_promised_while_it_is_made_then_shown(live_settings, c
     page = c.get(f"/r/{run['review_token']}").text
     assert "<video" in page and 'id="tracking-wait"' not in page
     assert c.get(f"/r/{run['review_token']}/tracking.mp4").status_code == 200
+
+
+def test_masks_decoded_in_parallel_match_one_at_a_time(tmp_path):
+    from meta_sam_parser import SegmentationMask
+    from app.models import segment
+    w, h = 12, 9
+    jobs = []
+    for i in range(20):
+        bits = [1 if (x + y + i) % 3 == 0 else 0 for y in range(h) for x in range(w)]
+        jobs.append((SegmentationMask("one_bit", _encode_raster(bits, w, h), w, h), tmp_path / "par" / f"{i}.png"))
+    segment.save_masks(jobs, workers=2)
+    for i, (mask, path) in enumerate(jobs):
+        alone = segment.save_mask(mask, tmp_path / "one" / f"{i}.png")
+        assert path.read_bytes() == alone.read_bytes()

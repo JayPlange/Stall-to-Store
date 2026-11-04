@@ -19,8 +19,8 @@ log = logging.getLogger("sts.pipeline")
 STEPS = [("transcribe", "Listening to your narration"), ("prices", "Picking out the prices you said"),
          ("track", "Finding and tracking your products"), ("keyframes", "Choosing product photos"),
          ("identify", "Reading product labels"), ("link", "Matching prices to products"),
-         ("associate", "Building your draft shop"), ("cutouts", "Cutting out product photos"),
-         ("overlay", "Making your tracking video")]
+         ("associate", "Building your draft shop"), ("overlay", "Making your tracking video"),
+         ("cutouts", "Cutting out product photos")]
 OPTIONAL = {"link", "cutouts", "overlay"}
 ESTIMATED_COST_USD = 0.13
 MAX_ATTEMPTS = 2

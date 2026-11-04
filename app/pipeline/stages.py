@@ -18,6 +18,7 @@ from app.pipeline.keyframes import (PHOTO_CANDIDATES, make_contact_sheet, make_c
 from app.pipeline.prices_regex import regex_mentions
 
 LIVE_STAGES = {"transcribe", "track", "identify", "link"}
+OVERLAY_MASK_EVERY = 2  # decode one mask per second of video (SAM tracks at 2 fps)
 
 
 class StageError(RuntimeError):
@@ -122,7 +123,8 @@ def run_stage(stage: str, run: dict, s: Settings, conn, client: MetaClient, prom
             for hit, score in ranked[:PHOTO_CANDIDATES]:
                 mask = outputs[prompt_index].get((obj, hit.frame_idx))
                 if mask is not None and hit.mask_box:
-                    png = segment.save_mask(mask, art / "masks" / f"{t.track_id}_{hit.frame_idx:05d}.png")
+                    png = art / "masks" / f"{t.track_id}_{hit.frame_idx:05d}.png"  # often made by the overlay
+                    png = png if png.is_file() else segment.save_mask(mask, png)
                     options.append((score * mask_fill(png), hit, png))
             if not options:
                 continue
@@ -157,18 +159,29 @@ def run_stage(stage: str, run: dict, s: Settings, conn, client: MetaClient, prom
         tracks = [t for t in map(Track.from_dict, _read(art / "tracks.json")["tracks"])
                   if t.track_id not in filtered]
         labels = {g["track_id"]: g.get("brand") or g.get("name") or "product" for g in _read(art / "guesses.json")}
-        outputs = {}
-
-        def mask_png(track_id: str, frame_idx: int) -> Path | None:
-            png = art / "masks" / f"{track_id}_{frame_idx:05d}.png"
-            if png.is_file():
-                return png
-            prompt_index, _, obj = track_id[1:].partition("o")
+        # Boxes follow every SAM frame. Masks decode slowly, so every other frame's mask is decoded (in
+        # parallel) and each frame borrows the nearest one: the video is ready about a minute after the draft.
+        outputs, decoded, jobs = {}, defaultdict(list), []
+        for t in tracks:
+            prompt_index, _, obj = t.track_id[1:].partition("o")
             if prompt_index not in outputs:
                 outputs[prompt_index] = segment.index_masks(
                     (art / f"sam_output_p{prompt_index}.txt").read_text(encoding="utf-8"))
-            mask = outputs[prompt_index].get((obj, frame_idx))
-            return segment.save_mask(mask, png) if mask is not None else None
+            for hit in t.frames[::OVERLAY_MASK_EVERY]:
+                mask = outputs[prompt_index].get((obj, hit.frame_idx))
+                if mask is None:
+                    continue
+                png = art / "masks" / f"{t.track_id}_{hit.frame_idx:05d}.png"
+                decoded[t.track_id].append(hit.frame_idx)
+                if not png.is_file():
+                    jobs.append((mask, png))
+        segment.save_masks(jobs)
+
+        def mask_png(track_id: str, frame_idx: int) -> Path | None:
+            if not decoded[track_id]:
+                return None
+            nearest = min(decoded[track_id], key=lambda f: abs(f - frame_idx))
+            return art / "masks" / f"{track_id}_{nearest:05d}.png"
 
         overlay_stage.render(s.runs_dir / run["video_path"], tracks, labels, mask_png, art / "tracking.mp4",
                              (meta["frame_width"], meta["frame_height"]), s.ffmpeg_bin)

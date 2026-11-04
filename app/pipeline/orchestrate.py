@@ -100,6 +100,8 @@ def run_pipeline(run_id: str, s: Settings, client_factory: Callable | None = Non
     init_db(conn)
     try:
         run = catalogue.get_run(conn, run_id)
+        if run["status"] != "processing":  # stopped while it waited in the queue: never spend on it
+            return False
         client = client_factory(conn) if client_factory else MetaClient(s, conn)
         for stage, _ in STEPS:
             _mark(conn, run_id, stage)

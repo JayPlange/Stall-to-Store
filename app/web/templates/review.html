@@ -46,7 +46,7 @@
   {% if not products and run.source == 'real' %}
   {% if run.status == 'processing' %}
   <h2 style="margin-top:8px">Working on your video</h2>
-  <p class="hint">{% if run.stage %}Your draft is usually ready in about 3 minutes. The photos and tracking video finish a little later.{% else %}Your video is in the queue and will start soon.{% endif %}</p>
+  <p class="hint">{% if run.stage %}Your draft is usually ready in about 3 minutes. The photos and tracking video finish a little later.{% else %}Another video is still being finished. Yours starts automatically after it, so there is no need to upload again.{% endif %}</p>
   <ol class="steps-list">{% for step in steps %}<li class="{{ step.state }}">{{ step.label }}</li>{% endfor %}</ol>
   {% elif run.status in ('draft_ready', 'published') %}
   <p style="margin-top:8px">We could not find any products in this video. Try filming closer, with labels facing the camera.</p>

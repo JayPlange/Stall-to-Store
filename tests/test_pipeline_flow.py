@@ -65,32 +65,39 @@ def ingested(conn, live_settings, sample_video):
     return run_id
 
 
+@pytest.fixture
+def queued(conn, ingested):
+    """An ingested run claimed for processing, as the upload and process routes leave it."""
+    set_run_status(conn, ingested, "processing", None)
+    return ingested
+
+
 def factory(settings, calls, fail=None):
     return lambda conn: MetaClient(settings, conn, httpx.MockTransport(respond(calls, fail)))
 
 
 @needs_ffmpeg
-def test_whole_pipeline_makes_a_draft_and_never_approves(live_settings, conn, ingested):
+def test_whole_pipeline_makes_a_draft_and_never_approves(live_settings, conn, queued):
     calls = []
-    assert run_pipeline(ingested, live_settings, factory(live_settings, calls)) is True
+    assert run_pipeline(queued, live_settings, factory(live_settings, calls)) is True
     assert sum(c.endswith("/responses") for c in calls) == 2 and len(calls) == 6  # one request per stage or prompt
-    run = get_run(conn, ingested)
+    run = get_run(conn, queued)
     assert (run["status"], run["stage"]) == ("draft_ready", "done")
-    products = list_products(conn, ingested)
+    products = list_products(conn, queued)
     assert len(products) == 1 and products[0]["status"] == "draft"
     assert products[0]["price_pesewas"] == 1200 and products[0]["cutout_path"]
-    assert (live_settings.runs_dir / ingested / "artefacts" / "tracking.mp4").is_file()
-    assert conn.execute("SELECT COUNT(*) FROM model_calls WHERE run_id = ?", (ingested,)).fetchone()[0] == 6
+    assert (live_settings.runs_dir / queued / "artefacts" / "tracking.mp4").is_file()
+    assert conn.execute("SELECT COUNT(*) FROM model_calls WHERE run_id = ?", (queued,)).fetchone()[0] == 6
 
 
 @needs_ffmpeg
-def test_required_failure_stops_once_with_a_safe_message(live_settings, conn, ingested):
+def test_required_failure_stops_once_with_a_safe_message(live_settings, conn, queued):
     calls = []
-    assert run_pipeline(ingested, live_settings, factory(live_settings, calls, fail="/asr/transcribe")) is False
+    assert run_pipeline(queued, live_settings, factory(live_settings, calls, fail="/asr/transcribe")) is False
     assert len(calls) == 1  # no retry and no later paid stage
-    run = get_run(conn, ingested)
+    run = get_run(conn, queued)
     assert run["status"] == "failed" and "Billing account issue" in run["error"] and "k-test" not in run["error"]
-    assert list_products(conn, ingested) == []
+    assert list_products(conn, queued) == []
 
 
 def test_step_states_follow_the_current_stage():
@@ -135,7 +142,7 @@ def test_process_refused_when_live_calls_are_off(settings, conn):
 
 
 @needs_ffmpeg
-def test_finishing_late_steps_never_undoes_a_publish(live_settings, conn, ingested):
+def test_finishing_late_steps_never_undoes_a_publish(live_settings, conn, queued):
     from app.pipeline import orchestrate
     real_run_stage = orchestrate.run_stage
 
@@ -146,10 +153,10 @@ def test_finishing_late_steps_never_undoes_a_publish(live_settings, conn, ingest
 
     orchestrate.run_stage = publish_during_photos
     try:
-        assert run_pipeline(ingested, live_settings, factory(live_settings, [])) is True
+        assert run_pipeline(queued, live_settings, factory(live_settings, [])) is True
     finally:
         orchestrate.run_stage = real_run_stage
-    assert get_run(conn, ingested)["status"] == "published"
+    assert get_run(conn, queued)["status"] == "published"
 
 
 def test_page_stops_refreshing_once_a_draft_exists(live_settings, conn):
@@ -209,3 +216,11 @@ def test_real_background_process_runs_and_reports(live_settings, conn):
     final = get_run(conn, run["id"])
     assert final["status"] == "failed" and final["stage"] == "transcribe"
     assert conn.execute("SELECT COUNT(*) FROM model_calls").fetchone()[0] == 0
+
+
+def test_a_run_stopped_while_queued_never_calls_meta(live_settings, conn):
+    run = create_run(conn, "real")
+    set_run_status(conn, run["id"], "failed", None, "Stopped before it started")
+    calls = []
+    assert run_pipeline(run["id"], live_settings, factory(live_settings, calls)) is False
+    assert calls == [] and get_run(conn, run["id"])["status"] == "failed"

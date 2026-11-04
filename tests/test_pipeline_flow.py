@@ -224,3 +224,19 @@ def test_a_run_stopped_while_queued_never_calls_meta(live_settings, conn):
     calls = []
     assert run_pipeline(run["id"], live_settings, factory(live_settings, calls)) is False
     assert calls == [] and get_run(conn, run["id"])["status"] == "failed"
+
+
+def test_tracking_video_is_promised_while_it_is_made_then_shown(live_settings, conn):
+    run = create_run(conn, "real")
+    art = run_dir(live_settings.runs_dir, run["id"], create=True) / "artefacts"
+    art.mkdir(parents=True, exist_ok=True)
+    (art / "tracks.json").write_text(json.dumps({"tracks": []}), encoding="utf-8")
+    set_run_status(conn, run["id"], "draft_ready", "overlay")
+    c = _app(live_settings, [])
+    page = c.get(f"/r/{run['review_token']}").text
+    assert 'id="tracking-wait"' in page and "<video" not in page
+    (art / "tracking.mp4").write_bytes(b"video")
+    set_run_status(conn, run["id"], "draft_ready", "done")
+    page = c.get(f"/r/{run['review_token']}").text
+    assert "<video" in page and 'id="tracking-wait"' not in page
+    assert c.get(f"/r/{run['review_token']}/tracking.mp4").status_code == 200

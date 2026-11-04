@@ -57,6 +57,7 @@ def render(video_path: Path, tracks: list[Track], labels: dict[str, str], mask_p
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     w, h = size
+    partial = out_path.with_name(out_path.stem + ".partial.mp4")  # the review page shows the video once it exists
     try:
         subprocess.run([ffmpeg_bin, "-nostdin", "-y", "-v", "error", "-i", str(video_path),
                         "-vf", f"fps={VIDEO_FPS},scale={w}:{h}", "-q:v", "3", str(work / "%05d.jpg")], check=True)
@@ -76,7 +77,9 @@ def render(video_path: Path, tracks: list[Track], labels: dict[str, str], mask_p
         subprocess.run([ffmpeg_bin, "-nostdin", "-y", "-v", "error", "-framerate", str(VIDEO_FPS),
                         "-i", str(work / "%05d.jpg"), "-i", str(video_path), "-map", "0:v", "-map", "1:a?",
                         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", "-c:a", "aac", "-shortest",
-                        "-movflags", "+faststart", str(out_path)], check=True)
+                        "-movflags", "+faststart", str(partial)], check=True)
+        partial.replace(out_path)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+        partial.unlink(missing_ok=True)
     return out_path

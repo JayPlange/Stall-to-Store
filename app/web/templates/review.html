@@ -29,6 +29,8 @@
 {% if has_tracking_video %}
 <video class="tracking" controls playsinline preload="metadata" src="/r/{{ run.review_token }}/tracking.mp4"></video>
 <p class="hint" style="margin:6px 0 12px">Coloured shapes are SAM 3.1's real tracking on your footage.</p>
+{% elif run.stage in ('associate', 'cutouts', 'overlay') %}
+<div class="notice" id="tracking-wait" style="margin-bottom:12px">SAM 3.1's tracking video is being made. It appears here by itself in a few minutes, so you can start checking your products now.</div>
 {% endif %}
 <section class="story">
   {% for s in story %}
@@ -106,6 +108,26 @@
   var home = "/r/{{ run.review_token }}";
   if (location.pathname !== home) history.replaceState(null, "", home);
   try { localStorage.setItem("sts-review-link", home); } catch (e) {}
+  // The tracking video is the last step. Swap it in when it is ready, without reloading the seller's edits.
+  (function () {
+    var wait = document.getElementById("tracking-wait");
+    if (!wait) return;
+    var src = home + "/tracking.mp4", tries = 0;
+    var timer = setInterval(function () {
+      if (++tries > 240) return clearInterval(timer);
+      fetch(src, { headers: { Range: "bytes=0-0" } }).then(function (r) {
+        if (!r.ok) return;
+        clearInterval(timer);
+        var video = document.createElement("video");
+        video.className = "tracking"; video.controls = true; video.playsInline = true;
+        video.preload = "metadata"; video.src = src;
+        var hint = document.createElement("p");
+        hint.className = "hint"; hint.style.margin = "6px 0 12px";
+        hint.textContent = "Coloured shapes are SAM 3.1's real tracking on your footage.";
+        wait.replaceWith(video, hint);
+      }).catch(function () {});
+    }, 5000);
+  })();
   document.getElementById("copy-link").addEventListener("click", function () {
     var button = this;
     navigator.clipboard.writeText(location.href).then(function () { button.textContent = "Copied"; });
